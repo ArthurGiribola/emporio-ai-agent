@@ -1,5 +1,10 @@
 # Empório da Música — customer-service agent
 
+Provider strategy: Gemini gemini-3.1-flash-lite is the verified free-tier default;
+local Ollama is the alternative. See docs/PROVIDERS.md for official sources,
+configuration, privacy boundaries, and live-verification limits. Native REST
+adapters add no dependencies. No paid API or automatic paid fallback is required.
+
 Phase 2 adds section-based policy retrieval and session-bound, read-only order
 access to the Phase 1 deterministic data foundation. It does **not** yet include
 an LLM, conversational CLI, production authentication, or external integrations.
