@@ -86,12 +86,14 @@ class Agent:
                     required = self._tools.required_evidence(question)
                     if required and not any(name == required and result.get("status") == "ok" for name, result in current_results):
                         self._emit({"event": "fresh_evidence_required", "tool": required})
-                        history.append({"role": "assistant", "native": reply.native})
+                        # A rejected draft is diagnostic evidence, not a fact for later turns.
                         history.append({"role": "user", "content": f"A fresh {required} call is required for the current question. Prior-turn evidence is insufficient. Call the tool before answering."})
                         continue
                     if not evidence or not reply.text.strip():
                         return AgentResult("unverified", "I could not verify an answer. Please specify an instrument, budget, store-policy question, or order ID.", tuple(called))
-                    answer = self._tools.grounded_answer(question, current_results, reply.text)
+                    previous_results = [(m["name"], m["result"]) for exchange in self._turns
+                                        for m in exchange if m["role"] == "tool"]
+                    answer = self._tools.grounded_answer(question, current_results, reply.text, previous_results)
                     self._emit({"event": "final_response", "text": answer, "guarded": answer != reply.text})
                     # If factual prose was replaced, do not preserve the contradictory original.
                     native = copy.deepcopy(reply.native)

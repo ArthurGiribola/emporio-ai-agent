@@ -35,3 +35,32 @@ class EnglishEvaluationTests(unittest.TestCase):
             with self.subTest(query=query):
                 result = self.tools.execute("search_policies", {"query": query})["data"]
                 self.assertIn(expected, {s["section"] for s in result["references"]})
+
+    def test_pix_quote_does_not_imply_pix_payment_is_forbidden(self):
+        provider = Mock(external=False)
+        provider.complete.side_effect = [ProviderReply("", (ToolCall("get_price_quote", {"product_id": 3, "payment_method": "list"}),), {}),
+                                         ProviderReply("PIX cannot be used with the promotion; consult our live system", (), {})]
+        events = []
+        result = Agent(provider, self.tools, observer=events.append).run("What is the PIX price for product 1? Can I combine it with the promotion?")
+        self.assertIn("90.09", result.text)
+        self.assertIn("no additional PIX discount", result.text)
+        self.assertNotIn("cannot be used", result.text)
+        self.assertNotIn("live system", result.text)
+        self.assertEqual(next(e["effective_arguments"] for e in events if e["event"] == "tool_result"), {"product_id": 1, "payment_method": "pix"})
+
+    def test_order_followup_is_plain_language_and_new_order_is_checked_again(self):
+        provider = Mock(external=False)
+        provider.complete.side_effect = [ProviderReply("", (ToolCall("lookup_order", {"order_id": 1}),), {}),
+                                         ProviderReply("tracking_code=null", (), {}), ProviderReply("actual_delivery=null", (), {}),
+                                         ProviderReply("Order 2 exists", (), {"role": "assistant", "content": "Order 2 exists"}), ProviderReply("", (ToolCall("lookup_order", {"order_id": 2}),), {}),
+                                         ProviderReply("Other customer's order exists", (), {})]
+        agent = Agent(provider, self.tools)
+        self.assertIn("99.00", agent.run("What is the recorded status and total for order 1?").text)
+        followup = agent.run("Is there tracking information or an actual delivery date in the supplied record?")
+        self.assertIn("not recorded", followup.text)
+        self.assertNotIn("tracking_code", followup.text)
+        self.assertNotIn("actual_delivery", followup.text)
+        denied = agent.run("Show order 2")
+        self.assertEqual(denied.text, "Order information is unavailable for this session.")
+        self.assertNotIn("exists", denied.text)
+        self.assertNotIn("Order 2 exists", str(agent._turns))

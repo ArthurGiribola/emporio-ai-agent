@@ -11,7 +11,8 @@ from app.orders import OrderService
 from app.policies import PolicyRetriever
 from app.repository import Repository
 from app.services import CatalogService, PricingConflictError
-from app.grounding import catalog_arguments, catalog_question, requested_budget, render_catalog, wants_all, english_question
+from app.grounding import (catalog_arguments, catalog_question, requested_budget, render_catalog, wants_all,
+                          english_question, requested_order_id, requested_product_id, order_record_followup, render_quote, render_order)
 from app.return_policy import online_return_question, extract_online_return_rule, assess_online_return, render_online_return
 
 
@@ -57,6 +58,15 @@ class ToolRuntime:
         return copy.deepcopy(TOOLS)
 
     def prepare_arguments(self, name: str, arguments: dict, question: str) -> dict:
+        if isinstance(arguments, dict) and name == "get_price_quote":
+            result = dict(arguments)
+            if re.search(r"\bpix\b", question.casefold()):
+                result["payment_method"] = "pix"
+            if requested_product_id(question) is not None:
+                result["product_id"] = requested_product_id(question)
+            return result
+        if isinstance(arguments, dict) and name == "lookup_order" and requested_order_id(question) is not None:
+            return {**arguments, "order_id": requested_order_id(question)}
         if name == "search_products" and isinstance(arguments, dict):
             return catalog_arguments(question, arguments, self._catalog)
         if name == "search_policies" and isinstance(arguments, dict) and online_return_question(question):
@@ -64,14 +74,18 @@ class ToolRuntime:
         return arguments
 
     def required_evidence(self, question: str) -> str | None:
+        if requested_order_id(question) is not None:
+            return "lookup_order"
         if online_return_question(question):
             return "search_policies"
+        if requested_product_id(question) is not None and re.search(r"price|cost|quote|preço|valor|pix", question.casefold()):
+            return "get_price_quote"
         if catalog_question(question) and (wants_all(question) or requested_budget(question) is not None
                                            or self._catalog.category_ids_from_text(question)):
             return "search_products"
         return None
 
-    def grounded_answer(self, question: str, results: list, model_text: str) -> str:
+    def grounded_answer(self, question: str, results: list, model_text: str, prior_results=()) -> str:
         if online_return_question(question):
             for name, result in reversed(results):
                 if name == "search_policies" and result.get("status") == "ok":
@@ -80,6 +94,16 @@ class ToolRuntime:
             for name, result in reversed(results):
                 if name == "search_products" and result.get("status") == "ok":
                     return render_catalog(result["data"], self._catalog.repository.categories, english=english_question(question))
+        for name, result in reversed(results):
+            if name == "get_price_quote" and result.get("status") == "ok":
+                data = result["data"]
+                return render_quote(data, self._catalog.get_product(data["product_id"]).name, english=english_question(question))
+            if name == "lookup_order" and result.get("status") == "ok":
+                return render_order(result["data"], english=english_question(question))
+        if not results and order_record_followup(question):
+            for name, result in reversed(prior_results):
+                if name == "lookup_order" and result.get("status") == "ok":
+                    return render_order(result["data"], english=english_question(question))
         return model_text
 
     def _product(self, product):
@@ -124,6 +148,7 @@ class ToolRuntime:
             elif name == "get_price_quote":
                 quote = self._catalog.get_price_quote(arguments["product_id"], payment_method=arguments.get("payment_method", "list"))
                 data = {"product_id": quote.product_id, "base_price_brl": quote.base_price_brl,
+                        "payment_method": quote.payment_method,
                         "final_price_brl": quote.final_price_brl, "discount_percent": quote.discount_percent,
                         "discount_kind": quote.discount_kind, "available": quote.available,
                         "warnings": [w.code for w in quote.warnings], "source": quote.source}
