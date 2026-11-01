@@ -155,6 +155,31 @@ services; they are not live LLM conversations. When the UI extra is absent,
 three page tests skip and the session/security tests still run. See
 [interface verification](docs/STREAMLIT_DEMO.md) for actual executed results.
 
+## Optional Windows desktop window
+
+The approved Streamlit mini-chat can also open as a native Windows window,
+without a browser tab or address bar. In the Python 3.12 UI environment:
+
+```powershell
+.\.venv-ui\Scripts\python.exe -m pip install -e ".[desktop]"
+$env:OLLAMA_MODEL = "qwen3:4b-instruct"
+# Or use the publicly available qwen3:4b tag if already installed.
+.\.venv-ui\Scripts\python.exe -m app.desktop
+```
+
+Requires Microsoft Edge WebView2 Runtime and Windows .NET support for pywebview.
+The 560×720 resizable window centers automatically, retains the existing theme
+and session behavior, and starts its own hidden/headless Streamlit worker on an
+available 127.0.0.1 port. It waits for readiness before opening the window. Closing
+it stops only its owned worker, leaving Ollama and other servers untouched.
+`python -m app.web` remains the normal browser option.
+
+No executable packaging, Python API bridge, or new backend is added. Sessions use
+private WebView storage; closing loses conversation/theme state. An abrupt OS or
+process crash is outside the normal-close cleanup guarantee. Dependencies and
+WebView2 must be installed separately; the launcher does not install them.
+See [desktop verification](docs/DESKTOP.md) for tests, boundaries, and limitations.
+
 ## Gemini synthetic conversation without paid credits
 
 Create/use a Gemini API key belonging to an active **Free Tier project without

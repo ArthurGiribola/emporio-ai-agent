@@ -53,8 +53,9 @@ def style(light):
     .st-key-mini_chat [data-testid="stColumn"] {{min-width:0 !important;}}
     .st-key-actions button {{border-radius:24px;min-height:36px;}}
     .st-key-mini_chat [data-testid="stChatMessage"] {{background:{bubble};border-radius:16px;padding:14px;margin:0 0 12px;gap:0;}}
-    .st-key-mini_chat [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {{background:{user};margin-left:56px;}}
+    .st-key-mini_chat [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {{background:{user};margin-left:56px;width:calc(100% - 56px);}}
     .st-key-mini_chat [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) p {{color:{user_text};}}
+    .st-key-mini_chat [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) * {{color:{user_text} !important;white-space:pre-wrap;overflow-wrap:anywhere;}}
     .st-key-mini_chat [data-testid="stChatMessageAvatarUser"],.st-key-mini_chat [data-testid="stChatMessageAvatarAssistant"] {{display:none;}}
     .st-key-mini_chat [data-testid="stChatMessage"] p {{font-size:14px;line-height:1.6;}}
     .st-key-mini_chat [data-testid="stChatInput"] {{border:1px solid {border};border-radius:14px;background:{bubble};}}
