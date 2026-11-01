@@ -2,6 +2,7 @@
 
 import copy
 import json
+import re
 from dataclasses import asdict
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -11,6 +12,7 @@ from app.policies import PolicyRetriever
 from app.repository import Repository
 from app.services import CatalogService, PricingConflictError
 from app.grounding import catalog_arguments, catalog_question, requested_budget, render_catalog, wants_all
+from app.return_policy import online_return_question, extract_online_return_rule, assess_online_return, render_online_return
 
 
 def _schema(name, description, properties, required=()):
@@ -57,15 +59,23 @@ class ToolRuntime:
     def prepare_arguments(self, name: str, arguments: dict, question: str) -> dict:
         if name == "search_products" and isinstance(arguments, dict):
             return catalog_arguments(question, arguments, self._catalog)
+        if name == "search_policies" and isinstance(arguments, dict) and online_return_question(question):
+            return {**arguments, "query": question}
         return arguments
 
     def required_evidence(self, question: str) -> str | None:
+        if online_return_question(question):
+            return "search_policies"
         if catalog_question(question) and (wants_all(question) or requested_budget(question) is not None
                                            or self._catalog.category_ids_from_text(question)):
             return "search_products"
         return None
 
     def grounded_answer(self, question: str, results: list, model_text: str) -> str:
+        if online_return_question(question):
+            for name, result in reversed(results):
+                if name == "search_policies" and result.get("status") == "ok":
+                    return render_online_return(question, result["data"])
         if catalog_question(question):
             for name, result in reversed(results):
                 if name == "search_products" and result.get("status") == "ok":
@@ -130,12 +140,22 @@ class ToolRuntime:
                     data["order"]["items_truncated"] = len(items) > 5
             else:
                 result = self._policies.search(arguments["query"])
+                sections, issues = result.sections, result.issues
+                online_return = online_return_question(arguments["query"])
+                if online_return and not re.search(r"defeit|garanti", arguments["query"].casefold()):
+                    sections = tuple(s for s in sections if s.number in {"4.1", "4.4"})
+                    issues = tuple(i for i in issues if set(i.sections).intersection({"4.1", "4.4"}))
                 data = {"status": result.status, "reference_only": True,
-                        "issues": [asdict(issue) for issue in result.issues], "limitations": result.limitations,
-                        "references": [{"section": s.number, "pages": s.pages} for s in result.sections],
+                        "issues": [asdict(issue) for issue in issues], "limitations": result.limitations,
+                        "references": [{"section": s.number, "pages": s.pages} for s in sections],
                         "sections": [{"section": s.number, "pages": s.pages, "source": s.source,
-                                      "text": s.text[:500], "text_truncated": len(s.text) > 500} for s in result.sections[:4]],
-                        "sections_truncated": len(result.sections) > 4}
+                                      "text": s.text[:500], "text_truncated": len(s.text) > 500} for s in sections[:4]],
+                        "sections_truncated": len(sections) > 4}
+                if any(s.number == "4.1" for s in sections):
+                    rule = extract_online_return_rule(self._policies.sections.get("4.1"))
+                    data["online_return_rule"] = rule
+                    if online_return:
+                        data["online_return_assessment"] = assess_online_return(arguments["query"], rule)
             # Conversion is explicit; no repr/default=str fallback can expose raw objects.
             encoded = json.dumps({"status": "ok", "data": data}, default=json_value, ensure_ascii=False, allow_nan=False)
             if len(encoded) > 12000:

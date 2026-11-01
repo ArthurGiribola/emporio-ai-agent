@@ -181,7 +181,7 @@ No data is silently routed from Ollama to Gemini.
 Tests distinguish synthetic service/CLI tests, mocked native-provider contracts,
 actual loopback HTTP against a stub (not a model), original-resource integration
 checks, and **opt-in live LLM** smoke tests. Public tests run without private files;
-11 resource-dependent methods skip when originals are absent. Default tests make
+13 offline resource-dependent methods skip when originals are absent. Default tests make
 no external model calls. Enable live synthetic checks explicitly:
 
 ```powershell
@@ -191,9 +191,9 @@ $env:EMPORIO_RUN_LIVE = "1"
 
 Gemini requires its local key and free-tier confirmation. Ollama requires a
 running server and qwen3:4b (or OLLAMA_MODEL for this two-provider smoke suite).
-Missing credentials/server produce explicit skips, not invented success. Live
-latency, tool selection, answer quality, and genuine transcripts remain pending
-until a provider is configured. See `docs/PHASE_3.md` for executed results and
+Missing credentials/server produce explicit skips, not invented success. Real local qwen3:4b-instruct catalog and return regressions have now passed;
+this is separate from mocked contract tests. Broader answer quality still needs
+review, and Gemini live execution is not claimed. See `docs/PHASE_3.md` for executed results and
 `docs/PROVIDERS.md` for dated official verification links. Prior phase records
 remain under `docs/`.
 
@@ -207,3 +207,13 @@ Original CSV/PDF resources, secrets, virtual environments, and build output are
 excluded from Git. No push/submission has been performed. The original challenge
 brief/email, deadline, redistribution permission, and GitHub-versus-PDF submission
 requirements still need confirmation before final delivery.
+
+## Correctness regression checks
+
+Catalog categories, budget, active stock, exhaustive counts, sorting, and list
+wording are enforced in Python for explicit requests. Online-return timing is
+compared with the window extracted from section 4.1; five days is within the
+supplied seven-day window, subject to conditions. Missing/conflicting evidence
+yields clarification, not a guessed deadline. These checks do not approve returns.
+See `docs/CORRECTNESS_FIXES.md` for actual tool traces summarized without private
+source text, limitations, and opt-in qwen3:4b-instruct regression commands.

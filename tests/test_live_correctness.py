@@ -49,3 +49,24 @@ class LiveCorrectnessTests(unittest.TestCase):
         self.assertNotIn("Kala", result.text)
         self.assertNotIn("list_price_brl", result.text)
         self.assertEqual(sum(line[:1].isdigit() for line in result.text.splitlines()), 12)
+
+    def test_real_online_return_five_days_is_within_seven_with_conditions(self):
+        events = []
+        agent = self.make_agent(events)
+        agent.run("Qual a diferença entre troca por defeito e devolução por arrependimento?")
+        events.clear()
+        result = agent.run("Comprei um violão pela internet e me arrependi. Posso devolver depois de 5 dias do recebimento? Como funciona o reembolso?")
+        self.assertEqual(result.status, "answered", result.text)
+        data = [e["result"]["data"] for e in events if e["event"] == "tool_result" and e["name"] == "search_policies" and e["result"]["status"] == "ok"][-1]
+        self.assertEqual(data["online_return_rule"]["request_window_days"], 7)
+        self.assertEqual(data["online_return_rule"]["refund_business_days"], 10)
+        self.assertEqual(data["online_return_assessment"]["elapsed_days"], 5)
+        self.assertTrue(data["online_return_assessment"]["within_window"])
+        self.assertFalse(data["online_return_assessment"]["eligibility_determined"])
+        self.assertTrue(result.text.startswith("Sim"))
+        self.assertIn("5 dias", result.text)
+        self.assertIn("7 dias", result.text)
+        self.assertIn("10 dias úteis", result.text)
+        self.assertIn("condições", result.text)
+        self.assertNotIn("não permite", result.text)
+        self.assertNotIn("após a validação", result.text)

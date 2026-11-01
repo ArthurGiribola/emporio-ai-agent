@@ -45,10 +45,12 @@ functions available for a model to invoke.
 
 ## Verification limits
 
-No GEMINI_API_KEY is configured here. Ollama is not installed and its local API
-is unavailable. Official compatibility and protocol contract tests can be checked;
-live project eligibility, model quality, and local performance cannot yet be
-claimed. Live tests must be opt-in and synthetic, with honest skips.
+The initial provider work had no configured Gemini key or local Ollama runtime.
+Local qwen3:4b-instruct is now available: genuine catalog/return correctness
+regressions and the synthetic pricing smoke check have passed. Gemini live
+project eligibility remains unverified without its key/free-tier confirmation.
+Cloud checks remain synthetic-only. Authorized source-data checks run only on
+local Ollama, explicitly opt-in, with honest skips when prerequisites are absent.
 
 ## Primary sources
 
