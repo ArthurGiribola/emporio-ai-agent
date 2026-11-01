@@ -25,6 +25,7 @@ TOOLS = [
     _schema("search_products", "Search snapshot catalog; inclusive list-price budget; available products by default.",
             {"query": {"type": "string"}, "category_id": {"type": "integer"},
              "max_price_brl": {"type": "string", "description": "Decimal BRL amount, for example 1000.00"},
+             "sort_by": {"type": "string", "enum": ["list_price", "effective_price"]},
              "all_results": {"type": "boolean", "description": "Return every matching product when the customer requests all; otherwise a partial preview is returned."}}),
     _schema("get_product", "Get a product and recorded availability, with quality warnings.",
             {"product_id": {"type": "integer"}}, ("product_id",)),
@@ -91,6 +92,9 @@ class ToolRuntime:
                 if name == "search_policies" and result.get("status") == "ok":
                     return render_online_return(question, result["data"])
         if catalog_question(question):
+            if any(name == "search_products" and result.get("status") == "error" for name, result in results):
+                return ("The catalog lookup failed; availability could not be verified." if english_question(question) else
+                        "A consulta ao catálogo falhou; não foi possível verificar a disponibilidade.")
             for name, result in reversed(results):
                 if name == "search_products" and result.get("status") == "ok":
                     return render_catalog(result["data"], self._catalog.repository.categories, english=english_question(question))
@@ -131,14 +135,19 @@ class ToolRuntime:
                 budget = arguments.get("max_price_brl")
                 products = self._catalog.search_products(arguments.get("query", ""),
                     category_id=arguments.get("category_id"), max_price_brl=Decimal(budget) if budget is not None else None)
+                effective = arguments.get("sort_by") == "effective_price"
+                quotes = {p.product_id: self._catalog.get_price_quote(p.product_id).final_price_brl for p in products} if effective else {}
+                if effective:
+                    products = tuple(sorted(products, key=lambda p: (quotes[p.product_id], p.product_id)))
                 all_results = arguments.get("all_results", False)
                 selected = products if all_results else products[:5]
                 # Compact search rows keep the full supplied catalog within the output budget.
                 data = {"products": [{"product_id": p.product_id, "name": p.name[:160], "category_id": p.category_id,
-                                      "list_price_brl": str(p.price_brl), "available": p.available,
+                                      "list_price_brl": str(p.price_brl), **({"effective_price_brl": str(quotes[p.product_id])} if effective else {}), "available": p.available,
                                       "warnings": [w.code for w in self._catalog.repository.product_warnings(p.product_id)]}
                                      for p in selected], "total_matches": len(products), "returned_count": len(selected),
-                        "truncated": len(selected) < len(products), "sort_order": "list_price_ascending",
+                        "truncated": len(selected) < len(products), "sort_order": "effective_price_ascending" if effective else "list_price_ascending",
+                        "catalog_state": "empty_dataset" if not self._catalog.repository.products else "matches" if products else "no_matches",
                         "all_results_requested": all_results, "source": "CSV snapshot; freshness unknown",
                         "filters": {"category_ids": sorted({arguments["category_id"]} if "category_id" in arguments
                                                            else self._catalog.category_ids_from_text(arguments.get("query", ""))),
