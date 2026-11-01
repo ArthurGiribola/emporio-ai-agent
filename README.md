@@ -154,7 +154,7 @@ transcript persistence is added. Synthetic policy rules are fictitious.
 
 The focused UI tests use Streamlit AppTest, mocked inference, and real synthetic
 services; they are not live LLM conversations. When the UI extra is absent,
-three page tests skip and the session/security tests still run. See
+page tests skip and the session/security tests still run. See
 [interface verification](docs/STREAMLIT_DEMO.md) for actual executed results.
 
 ## Optional Windows desktop window
@@ -170,7 +170,8 @@ $env:OLLAMA_MODEL = "qwen3:4b-instruct"
 ```
 
 Requires Microsoft Edge WebView2 Runtime and Windows .NET support for pywebview.
-The 560×720 resizable window centers automatically, retains the existing theme
+The approximately 560×720 fixed-size window centers automatically, disables
+maximizing/resizing, adapts to smaller screens, retains the existing theme
 and session behavior, and starts its own hidden/headless Streamlit worker on an
 available 127.0.0.1 port. It waits for readiness before opening the window. Closing
 it stops only its owned worker, leaving Ollama and other servers untouched.

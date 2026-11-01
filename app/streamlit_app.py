@@ -44,6 +44,8 @@ def style(light):
     .st-key-mini_chat p, .st-key-mini_chat label {{color:{text};}}
     .st-key-mini_chat [data-testid="stCaptionContainer"] p {{color:{muted};font-size:11px;}}
     .st-key-mini_chat h3 {{color:{text};font-size:20px;}}
+    .st-key-order_detail * {{color:{text} !important;}}
+    .st-key-order_detail [data-testid="stCaptionContainer"] * {{color:{muted} !important;}}
     .order-progress {{height:4px;border-radius:4px;background:{border};overflow:hidden;}}
     .order-progress > div {{height:100%;background:{muted};}}
     .brand {{display:flex;gap:12px;align-items:center;margin:0 0 12px;}}
@@ -61,6 +63,7 @@ def style(light):
     .st-key-mini_chat [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) p {{color:{user_text};}}
     .st-key-mini_chat [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) * {{color:{user_text} !important;white-space:pre-wrap;overflow-wrap:anywhere;}}
     .st-key-mini_chat [data-testid="stChatMessageAvatarUser"],.st-key-mini_chat [data-testid="stChatMessageAvatarAssistant"] {{display:none;}}
+    .st-key-mini_chat [data-testid="stChatMessage"] * {{color:{text};}}
     .st-key-mini_chat [data-testid="stChatMessage"] p {{font-size:14px;line-height:1.6;}}
     .st-key-mini_chat [data-testid="stChatInput"] {{border:1px solid {border};border-radius:14px;background:{bubble};}}
     .st-key-mini_chat [data-testid="stChatInput"] > div {{background:{bubble};color:{text};border-color:{border};box-shadow:none;}}

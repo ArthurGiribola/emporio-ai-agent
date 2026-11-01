@@ -62,16 +62,25 @@ class DesktopTests(unittest.TestCase):
         process.kill.assert_called_once()
         process.close.assert_called_once()
 
+    def test_fixed_window_adapts_to_small_screens(self):
+        from types import SimpleNamespace
+        self.assertEqual(desktop.window_dimensions(SimpleNamespace(width=1920,height=1080)),(560,720))
+        self.assertEqual(desktop.window_dimensions(SimpleNamespace(width=480,height=640)),(448,560))
+
     def test_window_parameters_and_modern_renderer(self):
         from contextlib import nullcontext
         webview = Mock()
+        from types import SimpleNamespace
+        webview.screens = [SimpleNamespace(width=1920, height=1080)]
         with patch.object(desktop.sys, "platform", "win32"), \
                 patch.dict("sys.modules", {"webview": webview}), \
                 patch.object(desktop, "local_server", return_value=nullcontext("http://127.0.0.1:1234/demo/")):
             self.assertEqual(desktop.main(), 0)
         kwargs = webview.create_window.call_args.kwargs
         self.assertEqual((kwargs["width"], kwargs["height"]), (560, 720))
-        self.assertTrue(kwargs["resizable"])
+        self.assertFalse(kwargs["resizable"])
+        self.assertFalse(kwargs["fullscreen"])
+        self.assertFalse(kwargs["maximized"])
         self.assertNotIn("js_api", kwargs)
         webview.start.assert_called_once_with(gui="edgechromium", debug=False, private_mode=True)
 

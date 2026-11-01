@@ -55,3 +55,28 @@ have separate explanations. Progress is a visual projection of recorded status,
 not evidence of intermediate events. Tests cover authorized display/back,
 anonymous/foreign denial, cancellation, missing items/tracking, and safe errors.
 25 focused UI/order tests passed before this milestone commit.
+
+
+## Fixed utility window
+
+The launcher now uses pywebview's public screen dimensions and supported window
+options: resizable=False, fullscreen=False, maximized=False. On Windows the
+pinned WinForms backend disables MaximizeBox for a non-resizable window. Native
+moving, minimizing, focusing and close behavior remain unchanged. No OS hooks,
+custom title bar, or separate application was introduced. Size is capped at
+560×720 with margins for smaller screen resolutions; very small screens may
+require vertical page scrolling, while the message/order regions remain scrollable.
+Nine focused launcher tests passed, including smaller-screen sizing and window
+flags. The real native accessibility tree showed Maximizar disabled.
+
+Final full suite with live local Ollama enabled: **150 tests, 149 passed, 1 skipped**,
+no failures/errors, 42.348 seconds. Gemini skipped because its free-tier key is
+not configured. AppTest/native-window mocks are distinct from actual Ollama and
+native window checks. Original privacy, return, catalog, and ownership tests
+remain passing. No push, visibility change, submission, or history rewrite.
+
+Actual native checks returned both reported catalog questions with two results,
+confirmed back navigation retained the first conversation, and showed the safe
+order DTO in the same fixed-size window. Dark/light order screenshots were
+captured. Scoped contrast rules keep order text and catalog list items legible
+in both themes. Earlier open application processes need a restart to load edits.

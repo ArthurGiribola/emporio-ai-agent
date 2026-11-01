@@ -2,8 +2,9 @@
 
 `python -m app.desktop` wraps the existing Streamlit mini-chat in pywebview
 6.2.1 with the Windows Edge Chromium renderer. It creates a centered, normally
-framed 560×720 window with standard move/minimize/maximize/close controls and
-resizing (minimum 420×640). No browser tab, address bar, executable packaging,
+framed, fixed-size window up to 560×720 with move/minimize/close controls.
+Maximizing and user resizing are disabled; screen dimensions reduce the initial
+size when necessary. No browser tab, address bar, executable packaging,
 new service architecture, or AI/tool change is introduced.
 
 ## Setup

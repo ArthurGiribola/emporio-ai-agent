@@ -86,16 +86,24 @@ def local_server():
     raise RuntimeError("Local interface could not start on an available loopback port")
 
 
+def window_dimensions(screen):
+    """Use public screen dimensions, allowing room for taskbar/window chrome."""
+    return min(560, max(1, screen.width - 32)), min(720, max(1, screen.height - 80))
+
+
 def main():
     if sys.platform != "win32":
         print("The desktop launcher supports Windows. Use python -m app.web for the browser interface.")
         return 2
     try:
         import webview
+        os.environ["PYWEBVIEW_GUI"] = "edgechromium"
+        screen = webview.screens[0]
+        width, height = window_dimensions(screen)
         with local_server() as url:
-            # Default x/y center on screen. Keep normal native window chrome.
-            webview.create_window("Empório da Música", url, width=560, height=720,
-                                  min_size=(420, 640), resizable=True,
+            # Default x/y center on the chosen screen. Native move/minimize/close remain.
+            webview.create_window("Empório da Música", url, width=width, height=height, screen=screen,
+                                  min_size=(width, height), resizable=False, fullscreen=False, maximized=False,
                                   background_color="#000000", text_select=True)
             webview.start(gui="edgechromium", debug=False, private_mode=True)
         return 0
