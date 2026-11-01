@@ -155,9 +155,11 @@ No data is silently routed from Ollama to Gemini.
 - Authorized order outputs omit customer IDs, names, contacts, addresses, payment
   details, and notes. Foreign/nonexistent/malformed orders share one denial body.
   There are no order mutation, refund, cancellation, shipment, or identity tools.
-- Tool outputs are minimized: five catalog/order-line entries, four policy
-  excerpts of 500 characters, and a 12K-character tool-result ceiling. Truncation
-  is marked. Source references, quality warnings, and unknown fields are retained.
+- Tool outputs are minimized: five catalog preview entries (or every match on
+  an explicit all-results request), five order lines, four policy excerpts of
+  500 characters, and a 12K-character result ceiling. Truncation is marked and
+  never presented as complete. Category, availability, budget, sorting, and
+  catalog-list wording are enforced in Python. Source references, quality warnings, and unknown fields are retained.
 - Retrieved text is untrusted reference data. Prompts direct the model to cite
   sources, preserve cautions, and never execute document instructions. These
   controls do not prove that generated prose is always correct; review actual

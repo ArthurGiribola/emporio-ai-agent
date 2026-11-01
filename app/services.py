@@ -28,6 +28,12 @@ class CatalogService:
     def __init__(self, repository: Repository):
         self.repository = repository
 
+    def category_ids_from_text(self, text: str) -> set[int]:
+        """Resolve actual category labels, never category words in descriptions."""
+        normalized = _normalize(text)
+        return {category.category_id for category in self.repository.categories.values()
+                if re.search(r"(?<!\w)" + re.escape(_normalize(category.name)) + r"(?!\w)", normalized)}
+
     def search_products(
         self, query: str = "", *, category_id: int | None = None,
         min_price_brl: Decimal | None = None, max_price_brl: Decimal | None = None,
@@ -47,11 +53,14 @@ class CatalogService:
         if min_price_brl is not None and max_price_brl is not None and min_price_brl > max_price_brl:
             raise ValueError("Minimum price exceeds maximum price")
         terms = _normalize(query).split()
+        inferred_categories = self.category_ids_from_text(query)
         result = []
         for product in self.repository.products.values():
             if available_only and not product.available:
                 continue
             if category_id is not None and product.category_id != category_id:
+                continue
+            if inferred_categories and product.category_id not in inferred_categories:
                 continue
             if min_price_brl is not None and product.price_brl < min_price_brl:
                 continue

@@ -10,6 +10,7 @@ from app.orders import OrderService
 from app.policies import PolicyRetriever
 from app.repository import Repository
 from app.services import CatalogService, PricingConflictError
+from app.grounding import catalog_arguments, catalog_question, requested_budget, render_catalog, wants_all
 
 
 def _schema(name, description, properties, required=()):
@@ -20,7 +21,8 @@ def _schema(name, description, properties, required=()):
 TOOLS = [
     _schema("search_products", "Search snapshot catalog; inclusive list-price budget; available products by default.",
             {"query": {"type": "string"}, "category_id": {"type": "integer"},
-             "max_price_brl": {"type": "string", "description": "Decimal BRL amount, for example 1000.00"}}),
+             "max_price_brl": {"type": "string", "description": "Decimal BRL amount, for example 1000.00"},
+             "all_results": {"type": "boolean", "description": "Return every matching product when the customer requests all; otherwise a partial preview is returned."}}),
     _schema("get_product", "Get a product and recorded availability, with quality warnings.",
             {"product_id": {"type": "integer"}}, ("product_id",)),
     _schema("get_price_quote", "Get deterministic snapshot pricing; never stack PIX and promotions.",
@@ -52,6 +54,24 @@ class ToolRuntime:
     def schemas(self):
         return copy.deepcopy(TOOLS)
 
+    def prepare_arguments(self, name: str, arguments: dict, question: str) -> dict:
+        if name == "search_products" and isinstance(arguments, dict):
+            return catalog_arguments(question, arguments, self._catalog)
+        return arguments
+
+    def required_evidence(self, question: str) -> str | None:
+        if catalog_question(question) and (wants_all(question) or requested_budget(question) is not None
+                                           or self._catalog.category_ids_from_text(question)):
+            return "search_products"
+        return None
+
+    def grounded_answer(self, question: str, results: list, model_text: str) -> str:
+        if catalog_question(question):
+            for name, result in reversed(results):
+                if name == "search_products" and result.get("status") == "ok":
+                    return render_catalog(result["data"], self._catalog.repository.categories)
+        return model_text
+
     def _product(self, product):
         return {"product_id": product.product_id, "name": product.name[:160],
                 "list_price_brl": str(product.price_brl), "status": product.status,
@@ -69,6 +89,7 @@ class ToolRuntime:
             definition = schema["properties"][key]
             if ((definition["type"] == "integer" and (type(value) is not int or not 1 <= value < 10**12))
                     or (definition["type"] == "string" and (not isinstance(value, str) or len(value) > 4000))
+                    or (definition["type"] == "boolean" and type(value) is not bool)
                     or ("enum" in definition and value not in definition["enum"])):
                 return {"status": "error", "error": "invalid_arguments"}
         try:
@@ -76,8 +97,18 @@ class ToolRuntime:
                 budget = arguments.get("max_price_brl")
                 products = self._catalog.search_products(arguments.get("query", ""),
                     category_id=arguments.get("category_id"), max_price_brl=Decimal(budget) if budget is not None else None)
-                data = {"products": [self._product(p) for p in products[:5]], "total_matches": len(products),
-                        "truncated": len(products) > 5}
+                all_results = arguments.get("all_results", False)
+                selected = products if all_results else products[:5]
+                # Compact search rows keep the full supplied catalog within the output budget.
+                data = {"products": [{"product_id": p.product_id, "name": p.name[:160], "category_id": p.category_id,
+                                      "list_price_brl": str(p.price_brl), "available": p.available,
+                                      "warnings": [w.code for w in self._catalog.repository.product_warnings(p.product_id)]}
+                                     for p in selected], "total_matches": len(products), "returned_count": len(selected),
+                        "truncated": len(selected) < len(products), "sort_order": "list_price_ascending",
+                        "all_results_requested": all_results, "source": "CSV snapshot; freshness unknown",
+                        "filters": {"category_ids": sorted({arguments["category_id"]} if "category_id" in arguments
+                                                           else self._catalog.category_ids_from_text(arguments.get("query", ""))),
+                                    "query": arguments.get("query", ""), "max_price_brl": budget, "available_only": True}}
             elif name == "get_product":
                 data = self._product(self._catalog.get_product(arguments["product_id"]))
             elif name == "get_price_quote":
@@ -108,6 +139,10 @@ class ToolRuntime:
             # Conversion is explicit; no repr/default=str fallback can expose raw objects.
             encoded = json.dumps({"status": "ok", "data": data}, default=json_value, ensure_ascii=False, allow_nan=False)
             if len(encoded) > 12000:
+                if name == "search_products" and len(data["products"]) > 5:
+                    data["products"] = data["products"][:5]
+                    data.update(returned_count=5, truncated=True, output_limit_reached=True)
+                    return json.loads(json.dumps({"status": "ok", "data": data}, ensure_ascii=False))
                 return {"status": "error", "error": "result_too_large"}
             return json.loads(encoded)
         except PricingConflictError:
