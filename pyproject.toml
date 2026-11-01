@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "emporio-agent"
-version = "0.1.0"
+version = "0.2.0"
 description = "Deterministic data foundation for a music-store customer-service agent"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["pypdf==6.10.0"]
 
 [tool.setuptools]
 packages = ["app"]
