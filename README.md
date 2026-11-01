@@ -1,8 +1,8 @@
 # Empório da Música — Python customer-service agent
 
 An interactive text agent with one configurable LLM, explicit function calling,
-and deterministic Python catalog/pricing/promotion/policy/order tools. Gemini
-3.1 Flash-Lite is the verified free-tier default. Ollama is the local alternative.
+and deterministic Python catalog/pricing/promotion/policy/order tools. Ollama runs locally; Gemini
+3.1 Flash-Lite is the configured free-tier alternative for approved synthetic data.
 No paid API, agent framework, frontend, or vector database is required.
 
 ## Architecture and decisions
@@ -12,7 +12,7 @@ No paid API, agent framework, frontend, or vector database is required.
 - CSVs load once into typed records; relationships and required values are checked.
   Invalid structure fails early; credible source inconsistencies remain warnings.
 - Availability requires active status and positive recorded stock. Prices use
-  Decimal and explicit HALF_UP cent rounding. PIX never stacks with promotions.
+  Decimal and explicit HALF_UP cent rounding. An additional PIX discount never stacks with promotions; the promotional price still applies when paying by PIX.
 - Section-based PDF retrieval preserves section numbers/pages, joins continuation
   pages, retrieves related rules, and reports conflicts/insufficient evidence.
 - Order ownership is checked inside a read-only service bound at startup.
@@ -70,12 +70,15 @@ $env:LLM_PROVIDER = "ollama"
 $env:LLM_MODEL = "qwen3:4b"
 $env:OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 $env:LLM_TIMEOUT_SECONDS = "120"
+$env:LLM_MAX_OUTPUT_TOKENS = "2048"
 .\.venv\Scripts\python.exe -m app.cli --data-mode synthetic
 ```
 
 This is an arbitrary-question, multi-turn conversation over public synthetic
 fixtures. Type `/quit` to exit or `/reset` to forget context. No transcript is
-saved automatically. Thinking is disabled for local tool turns to reduce token
+saved automatically. The recorded examples use the locally installed `qwen3:4b-instruct` tag; its
+public download availability is not assumed. The public `qwen3:4b` model is also
+tested separately. Thinking is disabled for local tool turns to reduce token
 usage; installed-model behavior and hardware still determine latency/quality.
 
 To use the supplied local store resources, place the original six CSVs and
@@ -191,10 +194,16 @@ $env:EMPORIO_RUN_LIVE = "1"
 
 Gemini requires its local key and free-tier confirmation. Ollama requires a
 running server and qwen3:4b (or OLLAMA_MODEL for this two-provider smoke suite).
-Missing credentials/server produce explicit skips, not invented success. Real local qwen3:4b-instruct catalog and return regressions have now passed;
-this is separate from mocked contract tests. Broader answer quality still needs
-review, and Gemini live execution is not claimed. See `docs/PHASE_3.md` for executed results and
-`docs/PROVIDERS.md` for dated official verification links. Prior phase records
+Missing credentials/server produce explicit skips, not invented success. Real local
+qwen3:4b-instruct catalog and return regressions have passed. Five actual English
+synthetic conversations, with tool traces and answer-origin labels, are in
+[examples](examples/README.md). Application guards render critical catalog, quote,
+order, and return-timing answers after tool execution; those are distinguished
+from model-written prose. The policy follow-up still exposes internal evidence
+labels, an acknowledged presentation limitation. Gemini live execution is not
+claimed. See [final evaluation](docs/FINAL_EVALUATION.md) for executed results,
+public-only installation checks, and audit limits, and
+[provider verification](docs/PROVIDERS.md) for dated official links. Prior phase records
 remain under `docs/`.
 
 ## AI assistance and submission status
@@ -215,5 +224,6 @@ wording are enforced in Python for explicit requests. Online-return timing is
 compared with the window extracted from section 4.1; five days is within the
 supplied seven-day window, subject to conditions. Missing/conflicting evidence
 yields clarification, not a guessed deadline. These checks do not approve returns.
+See [safe publication instructions](docs/PUBLISHING.md) before creating a remote.
 See `docs/CORRECTNESS_FIXES.md` for actual tool traces summarized without private
 source text, limitations, and opt-in qwen3:4b-instruct regression commands.
