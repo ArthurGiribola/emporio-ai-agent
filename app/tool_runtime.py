@@ -11,7 +11,7 @@ from app.orders import OrderService
 from app.policies import PolicyRetriever
 from app.repository import Repository
 from app.services import CatalogService, PricingConflictError
-from app.grounding import catalog_arguments, catalog_question, requested_budget, render_catalog, wants_all
+from app.grounding import catalog_arguments, catalog_question, requested_budget, render_catalog, wants_all, english_question
 from app.return_policy import online_return_question, extract_online_return_rule, assess_online_return, render_online_return
 
 
@@ -79,7 +79,7 @@ class ToolRuntime:
         if catalog_question(question):
             for name, result in reversed(results):
                 if name == "search_products" and result.get("status") == "ok":
-                    return render_catalog(result["data"], self._catalog.repository.categories)
+                    return render_catalog(result["data"], self._catalog.repository.categories, english=english_question(question))
         return model_text
 
     def _product(self, product):

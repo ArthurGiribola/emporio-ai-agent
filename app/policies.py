@@ -109,6 +109,14 @@ class PolicyRetriever:
         if not isinstance(question, str) or not question.strip() or len(question) > 4000:
             return PolicyRetrieval("insufficient_evidence", (), (), ("A nonempty question of at most 4000 characters is required.",))
         query = normalize(question)
+        # Query vocabulary only: do not translate or alter source-policy evidence.
+        aliases = {r"\breturns?\b": "devolucao", r"\brefunds?\b": "reembolso",
+                   r"\bwarrant(?:y|ies)\b": "garantia", r"\bpayments?\b": "pagamento",
+                   r"\bshipping\b": "frete", r"\bdelivery\b": "entrega",
+                   r"\bpromotions?\b": "promocao", r"\bdiscounts?\b": "desconto",
+                   r"\bopening hours\b": "horario", r"\bcomplaints?\b": "reclamacao"}
+        for pattern, replacement in aliases.items():
+            query = re.sub(pattern, replacement, query)
         topics = [topic for topic, (pattern, _) in TOPICS.items() if re.search(pattern, query)]
         if not topics:
             return PolicyRetrieval("insufficient_evidence", (), (), ("No supported policy topic matched the question.",))
