@@ -1,0 +1,20 @@
+# Secrets and local environment
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+# Input files are provided for this challenge. Keep the originals out of a
+# public repository until permission to redistribute them is clarified.
+# The customer records and policy manual are supplied for local evaluation.
+/data/*.csv
+/data/*.pdf
+
+# Python packaging and local tools
+*.egg-info/
+build/
+dist/
+.coverage
+htmlcov/
+# Local planning input; not an English project deliverable
+/docs/CODEX_FIRST_PROMPT.md

@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emporio-agent"
+version = "0.1.0"
+description = "Deterministic data foundation for a music-store customer-service agent"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.setuptools]
+packages = ["app"]
