@@ -3,7 +3,8 @@
 An interactive text agent with one configurable LLM, explicit function calling,
 and deterministic Python catalog/pricing/promotion/policy/order tools. Ollama runs locally; Gemini
 3.1 Flash-Lite is the configured free-tier alternative for approved synthetic data.
-No paid API, agent framework, frontend, or vector database is required.
+No paid API, agent framework, separate frontend/backend, or vector database is required.
+An optional local Streamlit demonstration reuses the same agent; the CLI remains available.
 
 ## Architecture and decisions
 
@@ -24,7 +25,7 @@ No paid API, agent framework, frontend, or vector database is required.
   names/arguments are validated independently of model schemas. Decimal/dates
   serialize explicitly. Output sizes, HTTP timeouts, and response sizes are bounded.
 
-The only runtime dependency is pypdf 6.10.0. Python's standard library handles
+The only core CLI runtime dependency is pypdf 6.10.0; Streamlit is an optional UI extra. Python's standard library handles
 CSV, JSON, currency, HTTP, and tests. Direct native REST adapters keep protocol
 behavior visible without provider SDK dependencies.
 
@@ -109,6 +110,49 @@ Suggested questions (not recorded LLM transcripts):
 
 Actual local order IDs/ownership depend on the loaded files. Claims always refer
 to the supplied snapshot, not real-time stock or shipment updates.
+
+## Optional local Streamlit demonstration
+
+A single responsive chat page reuses the same Agent, tools, and local Ollama
+adapter. It supports arbitrary questions and multi-turn memory, readable catalog
+answers, policy section/page captions, loading/error states, and reset. Only the
+packaged synthetic fixture is available in this interface; no uploads, private
+paths, cloud provider, or customer-identity selector. Customer 1 is fixed by the
+existing demo service, and order 2 remains inaccessible. Reset does not rebind it.
+
+Use Python 3.12 (tested) for Streamlit's binary dependencies; the CLI environment
+can remain unchanged. From the repository root in PowerShell:
+
+```powershell
+py -3.12 -m venv .venv-ui
+.\.venv-ui\Scripts\python.exe -m pip install -e ".[ui]"
+$env:OLLAMA_MODEL = "qwen3:4b"
+# Use qwen3:4b-instruct here instead if that local tag is already installed.
+.\.venv-ui\Scripts\python.exe -m app.web
+```
+
+Start Ollama with cloud disabled and install the model as described above. Open
+http://127.0.0.1:8501. The launcher fixes the listen address to loopback, disables
+usage telemetry and exception-detail display, and never enables external models.
+`OLLAMA_BASE_URL` may select another validated loopback port. UI inference uses a
+120-second timeout and 2048 output tokens; Gemini/CLI environment settings do not
+change its provider. Stop the server with Ctrl+C. Do not expose it with a tunnel
+or public bind; this demo has no authentication system.
+
+Session objects are never globally cached. Each browser session has its own
+agent; four exchanges of display/model memory are retained. Refreshing or
+closing the tab can lose the session. Policy captions show only retrieved
+citation coordinates, never raw tool diagnostics. No conversation export or
+transcript persistence is added. Synthetic policy rules are fictitious.
+
+```powershell
+.\.venv-ui\Scripts\python.exe -m unittest tests.test_web -v
+```
+
+The focused UI tests use Streamlit AppTest, mocked inference, and real synthetic
+services; they are not live LLM conversations. When the UI extra is absent,
+three page tests skip and the session/security tests still run. See
+[interface verification](docs/STREAMLIT_DEMO.md) for actual executed results.
 
 ## Gemini synthetic conversation without paid credits
 
