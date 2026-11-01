@@ -20,8 +20,8 @@ Never enable billing to bypass quota failures. HTTP 429 stops; choose Ollama
 manually if needed. Brazil is listed as supported; account requirements apply.
 
 Free-tier content may be used to improve Google's products. The application
-cloud path will accept only generated synthetic fixtures and fixed synthetic
-questions. Actual customer/order records and the restricted manual stay local.
+cloud path accepts only approved packaged synthetic fixtures and filtered
+synthetic intent vocabulary; arbitrary original text is not forwarded. Actual customer/order records and the restricted manual stay local.
 This avoids relying on imperfect PII masking or model instructions.
 
 ## Native contracts and boundaries
@@ -64,3 +64,10 @@ claimed. Live tests must be opt-in and synthetic, with honest skips.
 - [Ollama capabilities](https://docs.ollama.com/api-reference/show-model-details)
 - [Local-only server](https://docs.ollama.com/faq#how-do-i-disable-ollamas-cloud-features)
 - [Local model](https://ollama.com/library/qwen3:4b)
+
+## Interactive scope
+
+The CLI supports multi-turn conversations. Ollama can use arbitrary questions
+and authorized local store files. Gemini only receives synthetic fixtures and
+locally projected demo vocabulary. The optional fixed-scenario runner is a smoke
+test, not the conversational agent. Setup is in the README.

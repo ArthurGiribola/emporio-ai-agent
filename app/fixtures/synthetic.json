@@ -1,0 +1,138 @@
+{
+  "description": "Approved fictitious demonstration data; never replace with source customer records.",
+  "tables": {
+    "categories": [
+      {
+        "category_id": "1",
+        "name": "Violões",
+        "description": "Synthetic category"
+      }
+    ],
+    "products": [
+      {
+        "product_id": "1",
+        "price_brl": "100.10",
+        "name": "Violão Sintético Nylon",
+        "category_id": "1",
+        "description": "Instrumento sintético de demonstração",
+        "stock_quantity": "3",
+        "status": "active",
+        "specs": "{\"strings\":\"nylon\"}",
+        "created_at": "2025-01-01"
+      },
+      {
+        "product_id": "2",
+        "price_brl": "200.00",
+        "name": "Violão Sintético Folk",
+        "category_id": "1",
+        "description": "Instrumento sintético de demonstração",
+        "stock_quantity": "0",
+        "status": "active",
+        "specs": "{\"strings\":\"nylon\"}",
+        "created_at": "2025-01-01"
+      },
+      {
+        "product_id": "3",
+        "price_brl": "250.00",
+        "name": "Violão Sintético Aço",
+        "category_id": "1",
+        "description": "Instrumento sintético de demonstração",
+        "stock_quantity": "5",
+        "status": "active",
+        "specs": "{\"strings\":\"steel\"}",
+        "created_at": "2025-01-01"
+      }
+    ],
+    "promotions": [
+      {
+        "promotion_id": "1",
+        "product_id": "1",
+        "discount_percent": "10",
+        "description": "Synthetic offer",
+        "is_active": "1"
+      }
+    ],
+    "customers": [
+      {
+        "customer_id": "1",
+        "name": "Synthetic Customer 1",
+        "phone": "SYNTHETIC-1",
+        "email": "demo-1@example.invalid",
+        "city": "Synthetic City"
+      },
+      {
+        "customer_id": "2",
+        "name": "Synthetic Customer 2",
+        "phone": "SYNTHETIC-2",
+        "email": "demo-2@example.invalid",
+        "city": "Synthetic City"
+      }
+    ],
+    "orders": [
+      {
+        "order_id": "1",
+        "customer_id": "1",
+        "order_date": "2025-01-02",
+        "status": "confirmed",
+        "total_brl": "99.00",
+        "payment_method": "pix",
+        "tracking_code": "",
+        "estimated_delivery": "",
+        "notes": ""
+      },
+      {
+        "order_id": "2",
+        "customer_id": "2",
+        "order_date": "2025-01-02",
+        "status": "confirmed",
+        "total_brl": "99.00",
+        "payment_method": "pix",
+        "tracking_code": "",
+        "estimated_delivery": "",
+        "notes": ""
+      }
+    ],
+    "order_items": [
+      {
+        "order_id": "1",
+        "quantity": "1",
+        "product_id": "1"
+      },
+      {
+        "order_id": "2",
+        "quantity": "1",
+        "product_id": "1"
+      }
+    ]
+  },
+  "policy_texts": {
+    "1": "Synthetic reference only; demo operator review required.",
+    "1.1": "Synthetic reference only; demo operator review required.",
+    "1.2": "Synthetic reference only; demo operator review required.",
+    "2": "Synthetic reference only; demo operator review required.",
+    "3": "Synthetic reference only; demo operator review required.",
+    "3.1": "Synthetic reference only; demo operator review required.",
+    "4": "Synthetic reference only; demo operator review required.",
+    "4.1": "Synthetic return window: 11 days. This is not the real store policy.",
+    "4.2": "Synthetic reference only; demo operator review required.",
+    "4.3": "Synthetic reference only; demo operator review required.",
+    "4.4": "Synthetic reference only; demo operator review required.",
+    "5": "Synthetic reference only; demo operator review required.",
+    "5.1": "Synthetic reference only; demo operator review required.",
+    "5.2": "Synthetic reference only; demo operator review required.",
+    "5.3": "Synthetic reference only; demo operator review required.",
+    "6": "Synthetic reference only; demo operator review required.",
+    "6.1": "Synthetic reference only; demo operator review required.",
+    "6.2": "Synthetic PIX and promotional discounts do not stack.",
+    "7": "Synthetic reference only; demo operator review required.",
+    "7.1": "Synthetic reference only; demo operator review required.",
+    "7.2": "Synthetic reference only; demo operator review required.",
+    "7.3": "Synthetic reference only; demo operator review required.",
+    "8": "Synthetic reference only; demo operator review required.",
+    "8.1": "Synthetic reference only; demo operator review required.",
+    "8.2": "Synthetic reference only; demo operator review required.",
+    "8.3": "Synthetic reference only; demo operator review required.",
+    "9": "Synthetic reference only; demo operator review required.",
+    "10": "Synthetic reference only; demo operator review required."
+  }
+}

@@ -66,11 +66,17 @@ class ProviderConfig:
     def from_environment(cls, environment: Mapping[str, str] | None = None):
         env = os.environ if environment is None else environment
         provider = env.get("LLM_PROVIDER", "gemini")
+        try:
+            timeout = int(env.get("LLM_TIMEOUT_SECONDS", "30"))
+            output_limit = int(env.get("LLM_MAX_OUTPUT_TOKENS", "1024"))
+        except (ValueError, TypeError):
+            raise ConfigurationError("Provider timeout/output environment values must be integers") from None
         return cls(provider=provider,
                    model=env.get("LLM_MODEL") or (DEFAULT_GEMINI_MODEL if provider == "gemini" else "qwen3:4b"),
                    api_key=env.get("GEMINI_API_KEY", ""),
                    free_tier_confirmed=env.get("GEMINI_FREE_TIER_CONFIRMED") == "1",
-                   base_url=env.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434"))
+                   base_url=env.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
+                   timeout_seconds=timeout, max_output_tokens=output_limit)
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -208,9 +214,9 @@ class OllamaProvider:
                                  "content": json.dumps(message["result"], ensure_ascii=False, allow_nan=False)})
             else:
                 messages.append({"role": "user", "content": message["content"]})
-        payload = {"model": self.config.model, "messages": messages, "stream": False,
+        payload = {"model": self.config.model, "messages": messages, "stream": False, "think": False,
                    "tools": [{"type": "function", "function": tool} for tool in tools],
-                   "options": {"num_predict": self.config.max_output_tokens}}
+                   "options": {"num_predict": self.config.max_output_tokens, "num_ctx": 16384}}
         response = self._transport(base + "/api/chat", payload, {}, self.config.timeout_seconds)
         try:
             native = response["message"]

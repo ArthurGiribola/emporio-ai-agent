@@ -1,6 +1,9 @@
 """Self-contained synthetic model demos; never load data/ or source customer records."""
 
 import csv
+import hashlib
+import json
+from importlib.resources import files
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -23,18 +26,12 @@ QUESTIONS = {
 
 
 def _write_fixtures(directory: Path):
-    rows = {
-        "categories": [dict(category_id="1", name="Violões", description="Synthetic category")],
-        "products": [dict(product_id=str(i), price_brl=price, name=name, category_id="1", description="Instrumento sintético de demonstração",
-                          stock_quantity=stock, status="active", specs='{"strings":"nylon"}', created_at="2025-01-01")
-                     for i, price, name, stock in [(1, "100.10", "Violão Sintético Nylon", "3"), (2, "200.00", "Violão Sintético Folk", "0")]],
-        "promotions": [dict(promotion_id="1", product_id="1", discount_percent="10", description="Synthetic offer", is_active="1")],
-        "customers": [dict(customer_id=str(i), name=f"Synthetic Customer {i}", phone=f"SYNTHETIC-{i}",
-                           email=f"demo-{i}@example.invalid", city="Synthetic City") for i in (1, 2)],
-        "orders": [dict(order_id=str(i), customer_id=str(i), order_date="2025-01-02", status="confirmed", total_brl="99.00",
-                        payment_method="pix", tracking_code="", estimated_delivery="", notes="") for i in (1, 2)],
-        "order_items": [dict(order_id=str(i), product_id="1", quantity="1") for i in (1, 2)],
-    }
+    data = json.loads(files("app").joinpath("fixtures/synthetic.json").read_text(encoding="utf-8"))
+    canonical = json.dumps(data, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
+    # Pin approved content, not platform-specific file line endings. Changes need review.
+    if hashlib.sha256(canonical).hexdigest() != "acebaba9f9685b003e676c29d454199e0b913f0439f11cef44ecc8b4d906c859":
+        raise ValueError("Synthetic fixtures differ from approved content; review before cloud use")
+    rows = data["tables"]
     for name, values in rows.items():
         with (directory / f"{name}.csv").open("w", encoding="utf-8", newline="") as stream:
             writer = csv.DictWriter(stream, fieldnames=SCHEMAS[name])
@@ -47,11 +44,7 @@ def _write_fixtures(directory: Path):
         font = DictionaryObject({NameObject("/Type"): NameObject("/Font"), NameObject("/Subtype"): NameObject("/Type1"),
                                  NameObject("/BaseFont"): NameObject("/Helvetica"), NameObject("/Encoding"): NameObject("/WinAnsiEncoding")})
         page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({NameObject("/F1"): font})})
-        text = "Synthetic reference only; demo operator review required."
-        if number == "4.1":
-            text = "Synthetic return window: 11 days. This is not the real store policy."
-        if number == "6.2":
-            text = "Synthetic PIX and promotional discounts do not stack."
+        text = data["policy_texts"][number]
         commands = ["BT /F1 9 Tf 10 770 Td"]
         for line in (f"{number}. {title}", text):
             escaped = "".join(f"\\{byte:03o}" for byte in line.encode("cp1252"))

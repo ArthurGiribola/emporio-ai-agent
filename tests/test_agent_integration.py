@@ -127,7 +127,7 @@ class AgentIntegrationTests(unittest.TestCase):
         self.assertEqual(result.status, "provider_error")
         provider.complete.assert_called_once()
 
-    def test_each_run_starts_with_fresh_history(self):
+    def test_unverified_turns_are_not_persisted(self):
         provider = Mock(external=False)
         provider.complete.return_value = ProviderReply("", (), {})
         agent = Agent(provider, self.tools)
