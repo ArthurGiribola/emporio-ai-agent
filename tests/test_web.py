@@ -92,13 +92,13 @@ class StreamlitPageTests(unittest.TestCase):
             app.run()
             app.chat_input[0].set_value("List all available products, cheapest first").run()
             self.assertFalse(app.exception)
-            self.assertIn("Complete list of 2", app.chat_message[1].markdown[0].value)
+            self.assertIn("Complete list of 2", app.chat_message[2].markdown[0].value)
             app.chat_input[0].set_value("What is the PIX price for product 1?").run()
             self.assertIn("90.09", app.chat_message[-1].markdown[0].value)
             self.assertIn(r"R\$ 90.09", app.chat_message[-1].markdown[0].value)
-            self.assertEqual(len(app.chat_message), 4)
-            app.button[0].click().run()
-            self.assertFalse(app.chat_message)
+            self.assertEqual(len(app.chat_message), 5)
+            app.button(key="reset_chat").click().run()
+            self.assertEqual(len(app.chat_message), 1)
             self.assertEqual(session._agent._turns, [])
 
     def test_policy_reference_and_safe_error_display(self):
@@ -112,6 +112,35 @@ class StreamlitPageTests(unittest.TestCase):
             self.assertTrue(app.warning)
             self.assertNotIn("restricted-file", app.warning[0].value)
             self.assertFalse(app.exception)
+
+    def test_theme_persists_without_changing_conversation(self):
+        app, session = self.app([])
+        with patch("app.web_session.ChatSession", return_value=session):
+            app.run()
+            app.button(key="theme_toggle").click().run()
+            self.assertTrue(app.session_state.light_theme)
+            app.chat_input[0].set_value("hello").run()
+            self.assertTrue(app.session_state.light_theme)
+            app.button(key="reset_chat").click().run()
+            self.assertTrue(app.session_state.light_theme)
+            self.assertEqual(session._agent._turns, [])
+            self.assertFalse(app.exception)
+
+    def test_all_suggestions_invoke_existing_tools(self):
+        scenarios = [("Ver produtos", "search_products", {"all_results": True}),
+                     ("Preços", "get_price_quote", {"product_id": 1, "payment_method": "pix"}),
+                     ("Meu pedido", "lookup_order", {"order_id": 1}),
+                     ("Políticas", "search_policies", {"query": "devolução"})]
+        for label, tool, arguments in scenarios:
+            with self.subTest(label=label):
+                app, session = self.app([reply_call(tool, arguments), ProviderReply("Synthetic evidence", (), {})])
+                with patch("app.web_session.ChatSession", return_value=session):
+                    app.run()
+                    next(b for b in app.button if b.label == label).click().run()
+                    self.assertFalse(app.exception)
+                    self.assertEqual(len(app.chat_message), 3)
+                    self.assertTrue(session._agent._turns)
+                    self.assertTrue(any(m.get("name") == tool for m in session._agent._turns[-1] if m["role"] == "tool"))
 
     def test_startup_failure_hides_details_and_disables_chat(self):
         from streamlit.testing.v1 import AppTest

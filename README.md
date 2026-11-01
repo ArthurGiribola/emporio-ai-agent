@@ -113,9 +113,10 @@ to the supplied snapshot, not real-time stock or shipment updates.
 
 ## Optional local Streamlit demonstration
 
-A single responsive chat page reuses the same Agent, tools, and local Ollama
-adapter. It supports arbitrary questions and multi-turn memory, readable catalog
-answers, policy section/page captions, loading/error states, and reset. Only the
+A compact, centered black-and-white mini-chat reuses the same Agent, tools, and
+local Ollama adapter. Its light/dark toggle persists within the session, and four
+Portuguese suggestion buttons submit real questions to the same agent. It supports arbitrary questions and multi-turn memory, readable catalog
+answers, policy section/page captions, loading/error states, and reset. Controls disable during inference. Only the
 packaged synthetic fixture is available in this interface; no uploads, private
 paths, cloud provider, or customer-identity selector. Customer 1 is fixed by the
 existing demo service, and order 2 remains inaccessible. Reset does not rebind it.

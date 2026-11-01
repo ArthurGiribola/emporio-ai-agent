@@ -23,8 +23,8 @@ frontend application, database, authentication service, or deployment was added.
 - Validated policy section/page coordinates are displayed as synthetic-reference
   captions. Raw diagnostic events, tool arguments, source files, and exceptions
   are never rendered. Tool-driven catalog/pricing/order wording is reused.
-- Native responsive Streamlit chat components avoid custom CSS/JavaScript and
-  preserve keyboard input. User messages render as text; assistant Markdown does
+- Native responsive Streamlit chat components preserve keyboard input. The
+  mini-chat redesign uses scoped static CSS, with no custom JavaScript. User messages render as text; assistant Markdown does
   not allow HTML, and BRL dollar signs are escaped to prevent accidental math.
 - Loading and sanitized operational errors are shown in the conversation. No
   refund, return, cancellation, shipment, or identity mutation is added.
@@ -75,3 +75,40 @@ Use an already installed qwen3:4b-instruct tag if preferred. Open
 http://127.0.0.1:8501. Stop with Ctrl+C. No remote configuration, push, visibility change, or
 submission was performed in this phase. Do not expose the unauthenticated local demonstration
 through a public bind or tunnel.
+
+
+## Reference-based mini-chat refinement
+
+The approved screenshots guide the roughly 620px centered card, pure black
+background, thin neutral border, waveform mark, compact header, gray bubbles,
+pill suggestions, and bottom composer. The large hero and sidebar are removed.
+A native button toggles light/dark CSS tokens stored in session state. No remote
+fonts, image backgrounds, UI frameworks, or additional dependencies were added.
+Portuguese interface labels match the supplied design; documentation stays English.
+
+The four suggestions submit fixed useful Portuguese questions for available
+products, product 1 PIX pricing, authorized demo order 1, and return policies.
+They use the existing agent/tools rather than canned answers. A pending-turn
+rerun disables controls before inference, then restores them after completion.
+Reset clears conversational memory but preserves theme and the fixed identity.
+
+CSS is scoped to named Streamlit containers. A small set of native chat/input/
+column selectors styles bubbles and mobile controls against pinned Streamlit
+1.66.1; these may require review on a Streamlit upgrade. The conversation has a
+330px native scroll area, bounded display history, and an inline native composer.
+No model output enters HTML/CSS; answers still use HTML-disabled Markdown with
+currency escaping. Privacy and authentication boundaries are unchanged.
+
+Focused AppTest coverage now includes 11 methods, including every suggestion,
+theme persistence through chat/reset, and the existing memory/security/error
+checks. These use mocked inference and real synthetic services, not live models.
+Real local browser checks separately exercised suggestions with qwen3:4b-instruct,
+light/dark mode, reset, disabled processing controls, desktop and 390px mobile
+sizing. Screenshots were captured from the running application, not generated
+mockups. Visual review corrected the light composer surface and mobile column
+stacking. The reference is approximated with native Streamlit controls; font and
+send-button glyph can differ from the mockup. No backend or CLI change was made.
+
+Final redesign suite: **135 tests, 134 passed, 1 skipped**, no failures/errors,
+42.996 seconds, Python 3.12.14 with live Ollama enabled. Gemini skipped because
+free-tier credentials are not configured. All 11 focused UI/session tests passed.
