@@ -97,7 +97,7 @@ def http_json(url: str, payload: dict, headers: dict, timeout: int) -> dict:
         if code == 429:
             raise ProviderError("Provider quota/rate limit reached; no retry or paid fallback was attempted") from None
         raise ProviderError(f"Provider request failed (HTTP {code}); check configuration or availability") from None
-    except (URLError, TimeoutError, OSError, UnicodeError, ValueError):
+    except (URLError, TimeoutError, OSError, UnicodeError, ValueError, RecursionError):
         raise ProviderError("Provider connection or JSON response failed") from None
 
 
@@ -122,6 +122,7 @@ def _calls(values: list, *, gemini: bool) -> tuple[ToolCall, ...]:
     for value in values:
         function = value if gemini else value.get("function", {}) if isinstance(value, dict) else {}
         if (not isinstance(function, dict) or not isinstance(function.get("name"), str)
+                or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", function["name"])
                 or not isinstance(function.get("args" if gemini else "arguments", {}), dict)):
             raise ProviderError("Invalid provider tool call")
         call_id = function.get("id", "") if gemini else str(function.get("index", ""))
