@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 
 from app.agent import Agent
+from app.orders import OrderLookupResult
 from app.providers import ProviderConfig, create_provider
 from app.synthetic import SyntheticTools
 
@@ -60,6 +61,13 @@ class ChatSession:
                     "I could not verify an answer. Try a shorter, more specific question, or reset the conversation.")
             return ChatAnswer(text, error=True)
         return ChatAnswer(result.text, tuple(self._references))
+
+    def order_details(self):
+        """Fixed demo order; ownership stays inside the bound Python service."""
+        try:
+            return self._tools._orders.lookup_order(1)
+        except Exception:
+            return OrderLookupResult("error", None, "Order lookup could not be completed.")
 
     def reset(self):
         self._agent.reset()

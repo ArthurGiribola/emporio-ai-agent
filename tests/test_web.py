@@ -126,10 +126,9 @@ class StreamlitPageTests(unittest.TestCase):
             self.assertEqual(session._agent._turns, [])
             self.assertFalse(app.exception)
 
-    def test_all_suggestions_invoke_existing_tools(self):
+    def test_chat_suggestions_invoke_existing_tools(self):
         scenarios = [("Ver produtos", "search_products", {"all_results": True}),
                      ("Preços", "get_price_quote", {"product_id": 1, "payment_method": "pix"}),
-                     ("Meu pedido", "lookup_order", {"order_id": 1}),
                      ("Políticas", "search_policies", {"query": "devolução"})]
         for label, tool, arguments in scenarios:
             with self.subTest(label=label):
@@ -141,6 +140,52 @@ class StreamlitPageTests(unittest.TestCase):
                     self.assertEqual(len(app.chat_message), 3)
                     self.assertTrue(session._agent._turns)
                     self.assertTrue(any(m.get("name") == tool for m in session._agent._turns[-1] if m["role"] == "tool"))
+
+    def test_order_view_preserves_chat_and_authorization(self):
+        app, session = self.app([])
+        with patch("app.web_session.ChatSession", return_value=session):
+            app.run()
+            app.chat_input[0].set_value("hello").run()
+            previous=list(app.session_state.messages)
+            next(b for b in app.button if b.label == "Meu pedido").click().run()
+            self.assertFalse(app.chat_input)
+            self.assertTrue(any("99,00" in m.value for m in app.markdown))
+            self.assertTrue(any("Nylon" in t.value for t in app.text))
+            self.assertTrue(any("não informado" in c.value for c in app.caption))
+            self.assertFalse(app.exception)
+            app.button(key="back_to_chat").click().run()
+            self.assertEqual(app.session_state.messages,previous)
+            self.assertTrue(app.chat_input)
+
+    def test_order_view_denies_missing_or_foreign_identity(self):
+        from app.orders import OrderService, DemoSessionConfig
+        for config in (DemoSessionConfig(), DemoSessionConfig(True,2)):
+            app, session = self.app([])
+            session._tools._orders=OrderService(session._tools._catalog.repository,config)
+            with patch("app.web_session.ChatSession", return_value=session):
+                app.run()
+                next(b for b in app.button if b.label == "Meu pedido").click().run()
+                self.assertTrue(any("não estão disponíveis" in i.value for i in app.info))
+                self.assertFalse(any("99,00" in m.value for m in app.markdown))
+                self.assertFalse(app.exception)
+
+    def test_order_view_cancelled_empty_items_and_service_error(self):
+        from dataclasses import replace
+        from app.orders import OrderLookupResult
+        app, session = self.app([])
+        actual=session.order_details()
+        cancelled=OrderLookupResult("available",replace(actual.order,status="cancelled",items=()),"snapshot")
+        with patch("app.web_session.ChatSession", return_value=session), patch.object(session,"order_details",return_value=cancelled):
+            app.run()
+            next(b for b in app.button if b.label == "Meu pedido").click().run()
+            self.assertTrue(any("Cancelado" in t.value for t in app.markdown))
+            self.assertTrue(any("não estão informados" in c.value for c in app.caption))
+            self.assertFalse(app.exception)
+        with patch.object(session._tools._orders.__class__,"lookup_order",side_effect=RuntimeError("private note")):
+            result=session.order_details()
+            self.assertEqual(result.status,"error")
+            self.assertIsNone(result.order)
+            self.assertNotIn("private",result.message)
 
     def test_startup_failure_hides_details_and_disables_chat(self):
         from streamlit.testing.v1 import AppTest

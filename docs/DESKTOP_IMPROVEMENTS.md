@@ -36,3 +36,22 @@ catalog claim. Complete/partial counts remain explicit. Mocked regressions cover
 the exact two-turn questions with stale/malformed model filters, effective sort
 order, explicit filter preservation, empty data, and failures. A real post-fix
 Ollama replay returned both products for both questions.
+
+
+## Authorized order detail view
+
+Meu pedido now navigates within Streamlit session state to a compact read-only
+view; it does not ask the model to invent a layout or open another window. It
+calls the existing session-bound OrderService for fixed synthetic order 1.
+Ownership is verified before the safe DTO is returned. Anonymous and foreign
+identities receive the same safe unavailability explanation. No identity input,
+customer contacts, notes, mutation, or private-source mode was added.
+
+Back preserves chat messages and model memory. The view shows recorded status,
+quantities/names, historical total, known tracking or an explicit missing-value
+message, and a status-based monochrome progress indicator. Cancelled/unknown
+statuses do not invent transport milestones. Missing lines and service failures
+have separate explanations. Progress is a visual projection of recorded status,
+not evidence of intermediate events. Tests cover authorized display/back,
+anonymous/foreign denial, cancellation, missing items/tracking, and safe errors.
+25 focused UI/order tests passed before this milestone commit.

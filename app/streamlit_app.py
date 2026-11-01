@@ -5,6 +5,7 @@ import re
 import streamlit as st
 
 from app.web_session import ChatSession
+from app.grounding import brl
 
 
 def show_answer(message):
@@ -42,6 +43,9 @@ def style(light):
     .st-key-mini_chat {{background:{panel};border:1px solid {border};border-radius:22px;padding:22px 22px 16px;box-shadow:none;color:{text};}}
     .st-key-mini_chat p, .st-key-mini_chat label {{color:{text};}}
     .st-key-mini_chat [data-testid="stCaptionContainer"] p {{color:{muted};font-size:11px;}}
+    .st-key-mini_chat h3 {{color:{text};font-size:20px;}}
+    .order-progress {{height:4px;border-radius:4px;background:{border};overflow:hidden;}}
+    .order-progress > div {{height:100%;background:{muted};}}
     .brand {{display:flex;gap:12px;align-items:center;margin:0 0 12px;}}
     .brand-mark {{border:1px solid {border};border-radius:12px;width:40px;height:40px;display:flex;align-items:center;justify-content:center;gap:3px;flex-shrink:0;}}
     .brand-mark i {{display:block;width:3px;background:{text};border-radius:4px;}}
@@ -69,6 +73,47 @@ def style(light):
     </style>""")
 
 
+def show_order():
+    back, heading = st.columns([1, 8], vertical_alignment="center")
+    if back.button("←", key="back_to_chat", help="Voltar à conversa"):
+        st.session_state.view = "chat"
+        st.rerun()
+    heading.markdown("**Meu pedido**")
+    with st.container(height=410, border=False, key="order_detail"):
+        result = st.session_state.shop_session.order_details()
+        if result.status == "error":
+            st.warning("Não foi possível consultar o pedido. Tente novamente mais tarde.")
+            return
+        if result.status != "available" or result.order is None:
+            st.info("As informações do pedido não estão disponíveis para esta sessão. É necessária uma identidade de sessão autorizada; o chat não pode alterá-la.")
+            return
+        order = result.order
+        statuses = {"pending": "Pendente", "confirmed": "Confirmado", "shipped": "Enviado", "delivered": "Entregue", "cancelled": "Cancelado"}
+        st.subheader(f"Pedido #{order.order_id}")
+        st.write("Situação registrada: " + statuses.get(order.status, "Não informada"))
+        progress = {"pending": 0.1, "confirmed": 0.33, "shipped": 0.66, "delivered": 1.0}
+        if order.status in progress:
+            percent = int(progress[order.status] * 100)
+            st.html(f'<div class="order-progress" role="progressbar" aria-label="Situação registrada" aria-valuenow="{percent}" aria-valuemin="0" aria-valuemax="100"><div style="width:{percent}%"></div></div>')
+            st.caption("Indicador do status registrado, sem histórico de eventos de transporte.")
+        elif order.status == "cancelled":
+            st.caption("Este pedido consta como cancelado. Nenhuma alteração foi realizada.")
+        st.markdown("**Produtos**")
+        if not order.items:
+            st.caption("Os produtos deste pedido não estão informados no registro.")
+        for item in order.items:
+            st.text(f"{item.quantity} × {item.product_name}")
+        st.markdown("**Total registrado: " + brl(order.total_brl) + "**")
+        if "historical_total_difference" in order.warnings:
+            st.caption("Total histórico preservado; os preços atuais não recalculam este pedido.")
+        st.markdown("**Rastreamento**")
+        if order.tracking_code:
+            st.text(order.tracking_code)
+        else:
+            st.caption("Código de rastreamento não informado.")
+        st.caption("Data efetiva de entrega não disponível. Consulta somente leitura a um registro sintético, sem atualização em tempo real.")
+
+
 def main():
     st.set_page_config(page_title="Empório da Música", page_icon="♪", layout="centered")
     style(st.session_state.get("light_theme", False))
@@ -90,6 +135,9 @@ def main():
             if st.button("↻", key="reset_chat", help="Reiniciar conversa", disabled=busy):
                 st.session_state.shop_session.reset()
                 st.session_state.messages = []
+        if st.session_state.get("view") == "order":
+            show_order()
+            return
         conversation = st.container(height=330, border=False, key="conversation")
         with conversation:
             with st.chat_message("assistant"):
@@ -105,6 +153,9 @@ def main():
         with st.container(key="actions"):
             for column, (label, prompt) in zip(st.columns(4, gap="small"), SUGGESTIONS.items()):
                 if column.button(label, use_container_width=True, disabled=busy):
+                    if label == "Meu pedido":
+                        st.session_state.view = "order"
+                        st.rerun()
                     selected = prompt
         submitted = st.chat_input("Digite sua mensagem…", max_chars=4000, disabled=busy) or selected
         if submitted and not busy:
