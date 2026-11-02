@@ -157,8 +157,8 @@ class StreamlitPageTests(unittest.TestCase):
             next(b for b in app.button if b.label == "Meu pedido").click().run()
             self.assertFalse(app.chat_input)
             self.assertTrue(any("99,00" in m.value for m in app.markdown))
-            self.assertTrue(any("Nylon" in t.value for t in app.text))
-            self.assertTrue(any("não informado" in c.value for c in app.caption))
+            self.assertTrue(any("Nylon" in t.value for t in app.markdown))
+            self.assertTrue(any("não informado" in c.value for c in app.markdown))
             self.assertFalse(app.exception)
             app.button(key="back_to_chat").click().run()
             self.assertEqual(app.session_state.messages,previous)
@@ -176,6 +176,23 @@ class StreamlitPageTests(unittest.TestCase):
                 self.assertFalse(any("99,00" in m.value for m in app.markdown))
                 self.assertFalse(app.exception)
 
+    def test_order_card_escapes_recorded_product_and_tracking_text(self):
+        from dataclasses import replace
+        from app.orders import OrderLookupResult
+        app, session = self.app([])
+        original = session.order_details().order
+        order = replace(original, items=(replace(original.items[0], product_name='<img src=x onerror=alert(1)>'),),
+                        tracking_code='<script>alert(1)</script>')
+        with patch('app.web_session.ChatSession', return_value=session), patch.object(session, 'order_details', return_value=OrderLookupResult('available', order, 'snapshot')):
+            app.run()
+            next(b for b in app.button if b.label == 'Meu pedido').click().run()
+            markup = '\n'.join(m.value for m in app.markdown)
+            self.assertIn('&lt;img', markup)
+            self.assertIn('&lt;script&gt;', markup)
+            self.assertNotIn('<img', markup)
+            self.assertNotIn('<script>', markup)
+            self.assertFalse(app.exception)
+
     def test_order_view_cancelled_empty_items_and_service_error(self):
         from dataclasses import replace
         from app.orders import OrderLookupResult
@@ -186,7 +203,7 @@ class StreamlitPageTests(unittest.TestCase):
             app.run()
             next(b for b in app.button if b.label == "Meu pedido").click().run()
             self.assertTrue(any("Cancelado" in t.value for t in app.markdown))
-            self.assertTrue(any("não estão informados" in c.value for c in app.caption))
+            self.assertTrue(any("não estão informados" in c.value for c in app.markdown))
             self.assertFalse(app.exception)
         with patch.object(session._tools._orders.__class__,"lookup_order",side_effect=RuntimeError("private note")):
             result=session.order_details()

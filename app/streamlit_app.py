@@ -1,6 +1,7 @@
 """One-page local demonstration. Launch with python -m app.web."""
 
 import re
+from html import escape
 
 import streamlit as st
 
@@ -44,7 +45,23 @@ def style(light):
     .st-key-mini_chat p, .st-key-mini_chat label {{color:{text};}}
     .st-key-mini_chat [data-testid="stCaptionContainer"] p {{color:{muted};font-size:11px;}}
     .st-key-mini_chat h3 {{color:{text};font-size:20px;}}
-    .st-key-order_detail * {{color:{text} !important;}}
+    .st-key-order_detail {{border-top:1px solid {border};padding-top:14px;}}
+    .st-key-order_detail [data-testid="stVerticalBlock"] {{gap:10px;}}
+    .order-summary {{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px;}}
+    .order-summary h2 {{font-size:26px;letter-spacing:-.8px;margin:0;color:{text};padding:0;}}
+    .order-label {{font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:{muted};font-weight:600;}}
+    .order-badge {{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid {border};border-radius:99px;background:{bubble};color:{text};font-size:11px;font-weight:600;}}
+    .order-badge::before {{content:"";width:5px;height:5px;border-radius:50%;background:currentColor;}}
+    .order-card {{border:1px solid {border};border-radius:14px;padding:14px 16px;margin-bottom:10px;color:{text};}}
+    .order-item {{display:flex;align-items:center;gap:12px;margin-top:12px;font-size:13px;line-height:1.4;overflow-wrap:anywhere;}}
+    .order-quantity {{display:flex;align-items:center;justify-content:center;min-width:32px;height:32px;border:1px solid {border};border-radius:9px;background:{bubble};font-size:12px;font-weight:600;}}
+    .order-total {{display:flex;justify-content:space-between;align-items:center;gap:12px;}}
+    .order-total strong {{font-size:25px;letter-spacing:-.6px;white-space:nowrap;color:{text};}}
+    .order-note {{font-size:11px;line-height:1.55;color:{muted};margin-top:8px;}}
+    .order-empty {{display:flex;align-items:center;gap:12px;margin-top:12px;}}
+    .order-icon {{width:34px;height:34px;flex-shrink:0;border:1px solid {border};border-radius:10px;display:flex;align-items:center;justify-content:center;color:{muted};}}
+    .order-empty strong {{font-size:12px;font-weight:500;color:{text};}}
+    .order-tracking {{font-size:13px;margin-top:10px;overflow-wrap:anywhere;}}
     .st-key-order_detail [data-testid="stCaptionContainer"] * {{color:{muted} !important;}}
     .order-progress {{height:4px;border-radius:4px;background:{border};overflow:hidden;}}
     .order-progress > div {{height:100%;background:{muted};}}
@@ -92,29 +109,29 @@ def show_order():
             return
         order = result.order
         statuses = {"pending": "Pendente", "confirmed": "Confirmado", "shipped": "Enviado", "delivered": "Entregue", "cancelled": "Cancelado"}
-        st.subheader(f"Pedido #{order.order_id}")
-        st.write("Situação registrada: " + statuses.get(order.status, "Não informada"))
-        progress = {"pending": 0.1, "confirmed": 0.33, "shipped": 0.66, "delivered": 1.0}
+        # Only escaped, authorized DTO fields enter this presentation markup.
+        status = statuses.get(order.status, "Não informada")
+        st.markdown(f'<div class="order-summary"><h2>Pedido #{escape(str(order.order_id))}</h2><span class="order-badge" aria-label="Status: {status}">{status}</span></div>', unsafe_allow_html=True)
+        progress = {"pending": 10, "confirmed": 33, "shipped": 66, "delivered": 100}
         if order.status in progress:
-            percent = int(progress[order.status] * 100)
+            percent = progress[order.status]
             st.html(f'<div class="order-progress" role="progressbar" aria-label="Situação registrada" aria-valuenow="{percent}" aria-valuemin="0" aria-valuemax="100"><div style="width:{percent}%"></div></div>')
-            st.caption("Indicador do status registrado, sem histórico de eventos de transporte.")
+            st.caption("Status registrado · sem histórico de transporte")
         elif order.status == "cancelled":
             st.caption("Este pedido consta como cancelado. Nenhuma alteração foi realizada.")
-        st.markdown("**Produtos**")
-        if not order.items:
-            st.caption("Os produtos deste pedido não estão informados no registro.")
-        for item in order.items:
-            st.text(f"{item.quantity} × {item.product_name}")
-        st.markdown("**Total registrado: " + brl(order.total_brl) + "**")
-        if "historical_total_difference" in order.warnings:
-            st.caption("Total histórico preservado; os preços atuais não recalculam este pedido.")
-        st.markdown("**Rastreamento**")
+        items = "".join(f'<div class="order-item"><span class="order-quantity">{escape(str(item.quantity))}×</span><span>{escape(item.product_name)}</span></div>' for item in order.items)
+        if not items:
+            items = '<div class="order-note">Os produtos deste pedido não estão informados no registro.</div>'
+        st.markdown(f'<section class="order-card" aria-label="Produtos"><div class="order-label">Produtos</div>{items}</section>', unsafe_allow_html=True)
+        note = '<div class="order-note">Total histórico preservado; os preços atuais não recalculam este pedido.</div>' if "historical_total_difference" in order.warnings else ""
+        st.markdown(f'<section class="order-card"><div class="order-total"><span class="order-label">Total registrado</span><strong>{escape(brl(order.total_brl))}</strong></div>{note}</section>', unsafe_allow_html=True)
         if order.tracking_code:
-            st.text(order.tracking_code)
+            tracking = f'<div class="order-tracking">{escape(order.tracking_code)}</div>'
         else:
-            st.caption("Código de rastreamento não informado.")
+            tracking = '<div class="order-empty"><span class="order-icon" aria-hidden="true">◇</span><div><strong>Rastreamento ainda não informado</strong><div class="order-note" style="margin-top:3px">Código de rastreamento não informado no registro.</div></div></div>'
+        st.markdown(f'<section class="order-card"><div class="order-label">Rastreamento</div>{tracking}</section>', unsafe_allow_html=True)
         st.caption("Data efetiva de entrega não disponível. Consulta somente leitura a um registro sintético, sem atualização em tempo real.")
+
 
 
 def main():
