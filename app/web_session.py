@@ -8,6 +8,8 @@ from app.agent import Agent
 from app.data_session import open_tools
 from app.orders import OrderLookupResult
 from app.providers import ProviderConfig, create_provider
+from app.catalog_view import CatalogView
+from app.grounding import english_question
 
 
 @dataclass(frozen=True)
@@ -15,6 +17,7 @@ class ChatAnswer:
     text: str
     references: tuple[str, ...] = ()
     error: bool = False
+    catalog: CatalogView | None = None
 
 
 class ChatSession:
@@ -93,6 +96,17 @@ class ChatSession:
                     if result.status == "provider_error" else
                     "I could not verify an answer. Try a shorter, more specific question, or reset the conversation.")
             return ChatAnswer(text, error=True)
+        if result.catalog is not None:
+            count = len(result.catalog.entries)
+            if count == 0:
+                return ChatAnswer(result.text, tuple(self._references), catalog=result.catalog)
+            if english_question(question):
+                source = 'demonstration catalog' if result.catalog.synthetic else 'catalog'
+                text = f'I found {count} products in our {source}. Browse the pages or select an item for details.'
+            else:
+                source = 'catálogo de demonstração' if result.catalog.synthetic else 'catálogo'
+                text = f'Encontrei {count} produtos no {source}. Você pode navegar pelas páginas ou selecionar um item para ver os detalhes.'
+            return ChatAnswer(text, tuple(self._references), catalog=result.catalog)
         return ChatAnswer(result.text, tuple(self._references))
 
     def order_details(self):

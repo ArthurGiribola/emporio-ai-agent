@@ -142,6 +142,7 @@ class LocalWebTests(unittest.TestCase):
             app.run()
             self.assertTrue(any('LOCAL' in c.value for c in app.caption))
             next(b for b in app.button if b.label == 'Ver produtos').click().run()
+            app.button(key='catalog_back').click().run()
             self.assertNotIn('sintético', app.session_state.messages[0]['text'])
             previous = list(app.session_state.messages)
             next(b for b in app.button if b.label == 'Meu pedido').click().run()

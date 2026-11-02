@@ -7,6 +7,7 @@ import streamlit as st
 
 from app.web_session import ChatSession
 from app.grounding import brl
+from app.catalog_ui import show_catalog, reset_catalog_navigation
 
 
 def show_answer(message):
@@ -14,7 +15,12 @@ def show_answer(message):
         st.warning(message["text"])
     else:
         # BRL dollar signs are currency, not Markdown/LaTeX math delimiters.
-        st.markdown(re.sub(r"(?<!\\)\$", r"\\$", message["text"]), unsafe_allow_html=False)
+        text = re.sub(r"(?<!\\)\$", r"\\$", message["text"])
+        st.markdown(text, unsafe_allow_html=False)
+        if message.get('catalog_token') == st.session_state.get('catalog_token') and message.get('catalog_token') is not None:
+            if st.button('Abrir catálogo', key=f"catalog_open_{message['catalog_token']}"):
+                st.session_state.view = 'catalog'
+                st.rerun()
     references = message.get("references", ())
     if references:
         # A single compact source note avoids one spaced block per section.
@@ -57,6 +63,14 @@ def style(light):
     .st-key-mini_chat h3 {{color:{text};font-size:20px;}}
     .st-key-order_detail {{border-top:1px solid {border};padding-top:14px;}}
     .st-key-order_detail [data-testid="stVerticalBlock"] {{gap:10px;}}
+    .st-key-catalog_screen [data-testid="stVerticalBlock"] {{gap:8px;}}
+    .catalog-row {{padding:10px 0;border-bottom:1px solid {border};}}
+    .catalog-head {{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;font-size:13px;line-height:1.45;}}
+    .catalog-head strong {{min-width:0;overflow-wrap:anywhere;font-weight:500;}}
+    .catalog-price {{font-weight:600;white-space:nowrap;font-size:13px;}}
+    .catalog-meta {{color:{muted};font-size:11px;line-height:1.5;margin-top:4px;}}
+    .catalog-stock {{margin-top:14px;font-size:13px;}}
+    .st-key-catalog_controls [data-testid="stWidgetLabel"] p {{font-size:11px;}}
     .order-summary {{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px;}}
     .order-summary h2 {{font-size:26px;letter-spacing:-.8px;margin:0;color:{text};padding:0;}}
     .order-label {{font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:{muted};font-weight:600;}}
@@ -166,8 +180,16 @@ def main():
             if st.button("↻", key="reset_chat", help="Reiniciar conversa", disabled=busy):
                 st.session_state.shop_session.reset()
                 st.session_state.messages = []
+                st.session_state.view = 'chat'
+                st.session_state.catalog_view = None
+                st.session_state.catalog_category = 0
+                reset_catalog_navigation()
         if st.session_state.get("view") == "order":
             show_order()
+            return
+        if st.session_state.get('view') == 'catalog' and st.session_state.get('catalog_view') is not None:
+            with st.container(key='catalog_screen'):
+                show_catalog()
             return
         conversation = st.container(height=330, border=False, key="conversation")
         with conversation:
@@ -204,10 +226,19 @@ def main():
                     with st.spinner("Consultando…"):
                         answer = st.session_state.shop_session.ask(question)
                     message = {"role": "assistant", "text": answer.text, "references": answer.references, "error": answer.error}
+                    if answer.catalog is not None:
+                        st.session_state.catalog_view = answer.catalog if answer.catalog.entries else None
+                        st.session_state.catalog_token = st.session_state.get('catalog_token', 0) + 1
+                        st.session_state.catalog_category = 0
+                        reset_catalog_navigation()
+                        if answer.catalog.entries:
+                            message['catalog_token'] = st.session_state.catalog_token
                     show_answer(message)
             st.session_state.messages.append(message)
             st.session_state.messages = st.session_state.messages[-8:]
             st.session_state.pending_question = None
+            if answer.catalog is not None and answer.catalog.entries:
+                st.session_state.view = 'catalog'
             st.rerun()
 
 

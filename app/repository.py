@@ -223,16 +223,22 @@ def _description_conflicts(product: Product) -> bool:
 
     This is a limited diagnostic, not semantic validation or automatic correction.
     """
+    return bool(attribute_conflicts(product))
+
+
+def attribute_conflicts(product: Product) -> tuple[tuple[str, str, str], ...]:
+    """The same conservative checks, with exact conflicting fields for display."""
     brands = ("Music Man", "Yamaha", "Fender", "Gibson", "Ibanez", "Pearl", "Tama", "Korg", "Roland", "Nord")
+    conflicts = []
     name = product.name.casefold()
     description = product.description.casefold()
     named = {brand for brand in brands if brand.casefold() in name}
     described = {brand for brand in brands if brand.casefold() in description}
     if named and described and not named.intersection(described):
-        return True
+        conflicts.append(('brand', ', '.join(sorted(named)), ', '.join(sorted(described))))
     for key, pattern in (("keys", r"\b(\d+)\s+teclas\b"), ("strings", r"\b(\d+)\s+cordas\b")):
         value = product.specs.get(key, "")
         match = re.search(pattern, description)
         if value.isdigit() and match and int(value) != int(match.group(1)):
-            return True
-    return False
+            conflicts.append((key, value, match.group(1)))
+    return tuple(conflicts)

@@ -96,8 +96,8 @@ def render_catalog(data: dict, categories, *, english: bool = False, synthetic: 
         unavailable = ' · Indisponível' if not product['available'] else ''
         lines.append(f"{index}. {product['name']} — {brl(product.get('effective_price_brl', product['list_price_brl']))}{unavailable}")
     lines.append("")
-    if any(p["warnings"] for p in products):
-        lines.append("Alguns modelos têm informações divergentes no cadastro; confirme esses detalhes com o atendimento.")
+    for product in products:
+        lines.extend(f"{product['name']}: {issue}" for issue in product.get('issues', ()))
     if data["truncated"]:
         lines.append("Há outros resultados. Esta lista não inclui todos; peça todos os modelos para ampliar a consulta.")
     if data.get("sort_order") == "effective_price_ascending":
@@ -133,8 +133,8 @@ def _render_english_catalog(data: dict, categories, *, synthetic: bool = False) 
     lines = [heading, ""]
     lines += [f"{i}. {p['name']} — R$ {Decimal(p.get('effective_price_brl', p['list_price_brl'])):,.2f}" + (' · Unavailable' if not p['available'] else '') for i, p in enumerate(products, 1)]
     lines.append("")
-    if any(p["warnings"] for p in products):
-        lines.append("Some product attributes conflict in the source; confirm those details with customer service.")
+    for product in products:
+        lines.extend(f"{product['name']}: {issue}" for issue in product.get('issues', ()))
     if data["truncated"]:
         lines.append("More matches exist; this is not the complete result set. Request all models to expand the search.")
     if data.get("sort_order") == "effective_price_ascending":
@@ -156,7 +156,7 @@ def order_record_followup(question: str) -> bool:
             and bool(re.search(r"tracking|delivery|status|total|rastre|entrega", text)))
 
 
-def render_quote(data: dict, name: str, *, english: bool, synthetic: bool = False) -> str:
+def render_quote(data: dict, name: str, *, english: bool, synthetic: bool = False, issues=()) -> str:
     money = (lambda value: f"R$ {Decimal(value):,.2f}") if english else brl
     if english:
         context = " in our demonstration catalog" if synthetic else ""
@@ -180,8 +180,8 @@ def render_quote(data: dict, name: str, *, english: bool, synthetic: bool = Fals
             lines.append(f"O valor inclui {data['discount_percent']}% de desconto no PIX, sobre o preço de {money(data['base_price_brl'])}.")
         if not data["available"]:
             lines.append("O produto consta como indisponível; o valor é apenas informativo.")
-    if data["warnings"] and any(w != "unknown_freshness" for w in data["warnings"]):
-        lines.append("Some source details require confirmation." if english else "Alguns dados do cadastro precisam de confirmação.")
+    if issues:
+        lines.extend(['', *issues])
     return "\n".join(lines)
 
 

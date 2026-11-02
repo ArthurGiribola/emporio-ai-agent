@@ -99,7 +99,9 @@ class StreamlitPageTests(unittest.TestCase):
             app.run()
             app.chat_input[0].set_value("List all available products, cheapest first").run()
             self.assertFalse(app.exception)
-            self.assertIn("2 available instruments", app.chat_message[2].markdown[0].value)
+            self.assertEqual(len(app.session_state.catalog_view.entries), 2)
+            app.button(key='catalog_back').click().run()
+            self.assertIn('2 products', app.chat_message[2].markdown[0].value)
             app.chat_input[0].set_value("What is the PIX price for product 1?").run()
             self.assertIn("90.09", app.chat_message[-1].markdown[0].value)
             self.assertIn(r"R\$ 90.09", app.chat_message[-1].markdown[0].value)
@@ -143,6 +145,9 @@ class StreamlitPageTests(unittest.TestCase):
                 with patch("app.web_session.ChatSession", return_value=session):
                     app.run()
                     next(b for b in app.button if b.label == label).click().run()
+                    if label == 'Ver produtos':
+                        self.assertTrue(app.selectbox)
+                        app.button(key='catalog_back').click().run()
                     self.assertFalse(app.exception)
                     self.assertEqual(len(app.chat_message), 3)
                     self.assertTrue(session._agent._turns)

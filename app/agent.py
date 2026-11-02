@@ -9,6 +9,10 @@ from app.cloud_privacy import project_synthetic_question
 from app.synthetic import SyntheticTools
 from app.tool_runtime import ToolRuntime
 from app.scope import assess_scope, scope_message
+from app.catalog_references import resolve_list_reference
+from app.grounding import catalog_question
+from app.return_policy import online_return_question
+from app.catalog_view import CatalogView, build_catalog_view
 
 
 SYSTEM = """You serve Empório da Música as a friendly, professional music-store customer-service assistant. Answer in the customer's language.
@@ -56,6 +60,7 @@ class AgentResult:
     status: str
     text: str
     tools_called: tuple[str, ...] = ()
+    catalog: CatalogView | None = None
 
 
 class Agent:
@@ -67,6 +72,7 @@ class Agent:
         self._provider, self._tools = provider, tools
         self._max_requests, self._max_tool_calls = max_requests, max_tool_calls
         self._turns: list[list[dict]] = []
+        self._catalog_product_ids = ()
         # Optional trusted local diagnostics; no files, network sink, or key logging.
         self._observer = observer
 
@@ -77,6 +83,23 @@ class Agent:
     def reset(self):
         """Forget conversation evidence without changing the bound identity."""
         self._turns.clear()
+        self._catalog_product_ids = ()
+
+    def _finish(self, question, history, called, results, answer, native, *, guarded=True):
+        self._emit({'event': 'final_response', 'text': answer, 'guarded': guarded})
+        catalog = None
+        for name, result in results:
+            if name == 'search_products' and catalog_question(question) and not online_return_question(question):
+                self._catalog_product_ids = tuple(p['product_id'] for p in result['data']['products']) if result.get('status') == 'ok' else ()
+                if result.get('status') == 'ok':
+                    catalog = build_catalog_view(self._tools._catalog, result['data'], synthetic=self._tools.is_synthetic)
+        history.append({'role': 'assistant', 'native': native})
+        previous_count = sum(len(exchange) for exchange in self._turns)
+        self._turns.append(copy.deepcopy(history[previous_count:]))
+        self._turns = self._turns[-4:]
+        while self._turns and len(json.dumps(self._turns, ensure_ascii=False)) > 20000:
+            self._turns.pop(0)
+        return AgentResult('answered', answer, tuple(called), catalog)
 
     def run(self, question: str) -> AgentResult:
         if not isinstance(question, str) or not question.strip() or len(question) > 4000:
@@ -107,6 +130,9 @@ class Agent:
                 return AgentResult("out_of_scope" if decision == "outside" else "scope_uncertain",
                                    scope_message(decision, language))
             # One bounded scope request precedes the unchanged business-request budget.
+            question, clarification = resolve_list_reference(question, self._catalog_product_ids)
+            if clarification:
+                return AgentResult('answered', clarification)
             for _ in range(self._max_requests):
                 if len(json.dumps(history, ensure_ascii=False)) > 24000:
                     return AgentResult("context_limit", "Conversation context limit reached; use /reset or a shorter question.", tuple(called))
@@ -137,20 +163,12 @@ class Agent:
                     previous_results = [(m["name"], m["result"]) for exchange in self._turns
                                         for m in exchange if m["role"] == "tool"]
                     answer = self._tools.grounded_answer(question, current_results, reply.text, previous_results)
-                    self._emit({"event": "final_response", "text": answer, "guarded": answer != reply.text})
                     # If factual prose was replaced, do not preserve the contradictory original.
                     native = copy.deepcopy(reply.native)
                     if answer != reply.text:
                         native = ({"role": "model", "parts": [{"text": answer}]} if self._provider.external
                                   else {"role": "assistant", "content": answer})
-                    history.append({"role": "assistant", "native": native})
-                    # Commit only the complete current turn, not earlier exchanges.
-                    previous_count = sum(len(exchange) for exchange in self._turns)
-                    self._turns.append(copy.deepcopy(history[previous_count:]))
-                    self._turns = self._turns[-4:]
-                    while self._turns and len(json.dumps(self._turns, ensure_ascii=False)) > 20000:
-                        self._turns.pop(0)
-                    return AgentResult("answered", answer, tuple(called))
+                    return self._finish(question, history, called, current_results, answer, native, guarded=answer != reply.text)
                 if len(called) + len(reply.calls) > self._max_tool_calls:
                     break
                 history.append({"role": "assistant", "native": reply.native})
@@ -163,6 +181,17 @@ class Agent:
                     evidence = evidence or result.get("status") == "ok"
                     called.append(call.name)
                     history.append({"role": "tool", "name": call.name, "call_id": call.call_id, "result": result})
+                # Large lists are already formatted from verified Python results.
+                # Avoid asking the model to reproduce 65 rows and exhaust tokens.
+                if (len(current_results) == 1 and current_results[0][0] == 'search_products'
+                        and current_results[0][1].get('status') == 'ok'
+                        and len(current_results[0][1]['data']['products']) > 10
+                        and self._tools.required_evidence(question) in (None, 'search_products')
+                        and catalog_question(question) and not online_return_question(question)):
+                    answer = self._tools.grounded_answer(question, current_results, '')
+                    native = ({'role': 'model', 'parts': [{'text': answer}]} if self._provider.external else
+                              {'role': 'assistant', 'content': answer})
+                    return self._finish(question, history, called, current_results, answer, native)
         except ProviderError as error:
             return AgentResult("provider_error", str(error), tuple(called))
         return AgentResult("limit_reached", "Execution limit reached; no further model or tool calls were made.", tuple(called))

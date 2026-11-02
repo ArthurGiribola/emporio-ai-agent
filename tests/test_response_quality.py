@@ -36,11 +36,12 @@ class ResponseQualityTests(unittest.TestCase):
         data['truncated'] = True
         data['total_matches'] = 9
         data['products'][0]['warnings'] = ['attribute_conflict']
+        data['products'][0]['issues'] = ['Brand conflict / Marca: nome A; descrição B.']
         for english in (False, True):
             text = render_catalog(data, {}, english=english)
             self.assertIn('2 of 9' if english else '2 de 9', text)
             self.assertIn('partial' if english else 'parcial', text)
-            self.assertIn('conflict' if english else 'divergentes', text)
+            self.assertIn('Brand conflict / Marca: nome A; descrição B.', text)
 
     def test_pix_promotion_restriction_unavailability_and_prices_remain_truthful(self):
         for product_id, available in [(1, True), (2, False)]:

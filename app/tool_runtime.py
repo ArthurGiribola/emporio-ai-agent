@@ -14,6 +14,7 @@ from app.services import CatalogService, PricingConflictError
 from app.grounding import (catalog_arguments, catalog_question, requested_budget, render_catalog, wants_all,
                           english_question, requested_order_id, requested_product_id, order_record_followup, render_quote, render_order)
 from app.return_policy import online_return_question, extract_online_return_rule, assess_online_return, render_online_return
+from app.catalog_view import product_issues
 
 
 def _schema(name, description, properties, required=()):
@@ -124,23 +125,30 @@ class ToolRuntime:
                         "A consulta ao catálogo falhou; não foi possível verificar a disponibilidade.")
             for name, result in reversed(results):
                 if name == "search_products" and result.get("status") == "ok":
-                    return render_catalog(result["data"], self._catalog.repository.categories, english=english_question(question), synthetic=self.is_synthetic)
+                    display = copy.deepcopy(result['data'])
+                    for row in display['products']:
+                        row['issues'] = product_issues(self._catalog.get_product(row['product_id']), english=english_question(question))
+                    return render_catalog(display, self._catalog.repository.categories, english=english_question(question), synthetic=self.is_synthetic)
         for name, result in reversed(results):
             if (name == 'get_product' and result.get('status') == 'ok'
                     and re.search(r'stock|estoque|categor', question.casefold())):
                 product = result['data']
+                issues = product_issues(self._catalog.get_product(product['product_id']), english=english_question(question))
+                details = '\n\n' + '\n'.join(issues) if issues else ''
                 if english_question(question):
                     availability = 'Available' if product['available'] else 'Unavailable'
                     return (f"**{product['name']}**\n\nCategory: {product['category']}. "
                             f"Recorded stock: {product['recorded_stock_quantity']} units. {availability}." +
-                            ('\n\nSome product details need confirmation.' if product['warnings'] else ''))
+                            details)
                 availability = 'Disponível' if product['available'] else 'Indisponível'
                 return (f"**{product['name']}**\n\nCategoria: {product['category']}. "
                         f"Estoque registrado: {product['recorded_stock_quantity']} unidades. {availability}." +
-                        ('\n\nAlguns dados do produto precisam de confirmação.' if product['warnings'] else ''))
+                        details)
             if name == "get_price_quote" and result.get("status") == "ok":
                 data = result["data"]
-                return render_quote(data, self._catalog.get_product(data["product_id"]).name, english=english_question(question), synthetic=self.is_synthetic)
+                product = self._catalog.get_product(data['product_id'])
+                return render_quote(data, product.name, english=english_question(question), synthetic=self.is_synthetic,
+                                    issues=product_issues(product, english=english_question(question)))
             if name == "lookup_order" and result.get("status") == "ok":
                 return render_order(result["data"], english=english_question(question), synthetic=self.is_synthetic)
         if not results and order_record_followup(question):
@@ -152,6 +160,7 @@ class ToolRuntime:
     def _product(self, product):
         return {"product_id": product.product_id, "name": product.name[:160],
                 "category": self._catalog.repository.categories[product.category_id].name,
+                "issues": product_issues(product, english=True),
                 "list_price_brl": str(product.price_brl), "status": product.status,
                 "available": product.available, "recorded_stock_quantity": product.stock_quantity,
                 "warnings": [w.code for w in self._catalog.repository.product_warnings(product.product_id)],
