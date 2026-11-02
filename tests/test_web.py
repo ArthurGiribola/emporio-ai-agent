@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from tests.helpers import mock_shop_scope
 from app.providers import ProviderError, ProviderReply, ToolCall
 from app.web_session import ChatSession
 
@@ -14,6 +15,9 @@ def reply_call(name, arguments):
 
 
 class WebSessionTests(unittest.TestCase):
+    def setUp(self):
+        mock_shop_scope(self)
+
     def session(self, replies):
         provider = Mock(external=False)
         provider.complete.side_effect = replies
@@ -76,6 +80,9 @@ class WebSessionTests(unittest.TestCase):
 
 @unittest.skipUnless(importlib.util.find_spec("streamlit"), "Optional Streamlit UI dependency not installed")
 class StreamlitPageTests(unittest.TestCase):
+    def setUp(self):
+        mock_shop_scope(self)
+
     def app(self, replies):
         from streamlit.testing.v1 import AppTest
         provider = Mock(external=False)

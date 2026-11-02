@@ -4,12 +4,14 @@ import unittest
 from unittest.mock import Mock
 
 from app.agent import Agent
+from tests.helpers import mock_shop_scope
 from app.providers import ProviderReply, ToolCall
 from app.synthetic import SyntheticTools
 
 
 class EnglishEvaluationTests(unittest.TestCase):
     def setUp(self):
+        mock_shop_scope(self)
         self.tools = SyntheticTools()
         self.addCleanup(self.tools.close)
 

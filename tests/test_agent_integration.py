@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import Mock
 
 from app.agent import Agent
+from tests.helpers import mock_shop_scope
 from app.orders import OrderService
 from app.providers import (ConfigurationError, GeminiProvider, OllamaProvider, ProviderConfig,
                            ProviderError, ProviderReply, ToolCall)
@@ -15,6 +16,7 @@ from tests.test_providers import gemini_config, gemini_reply
 
 class AgentIntegrationTests(unittest.TestCase):
     def setUp(self):
+        mock_shop_scope(self)
         self.tools = SyntheticTools()
         self.addCleanup(self.tools.close)
 

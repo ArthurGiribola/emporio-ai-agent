@@ -41,3 +41,12 @@ def write_fixture(directory: Path, rows: dict) -> None:
             writer = csv.DictWriter(stream, fieldnames=SCHEMAS[name])
             writer.writeheader()
             writer.writerows(records)
+
+
+def mock_shop_scope(case):
+    """Isolate existing business/transport tests; real scope is tested in test_scope."""
+    from unittest.mock import patch
+    scope = patch("app.agent.assess_scope", return_value=("shop", "en"))
+    decision = scope.start()
+    case.addCleanup(scope.stop)
+    return decision

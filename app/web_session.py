@@ -55,6 +55,8 @@ class ChatSession:
         except Exception:
             # Never render an exception, file path, response body, or traceback.
             return ChatAnswer("This turn could not be completed. Please reset the conversation and try again.", error=True)
+        if result.status in {"out_of_scope", "scope_uncertain"}:
+            return ChatAnswer(result.text)
         if result.status != "answered":
             text = ("The local model could not complete this turn. Check that Ollama is running and the model is installed, then try again."
                     if result.status == "provider_error" else

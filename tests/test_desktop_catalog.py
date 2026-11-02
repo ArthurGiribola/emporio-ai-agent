@@ -2,6 +2,7 @@
 import unittest
 from unittest.mock import Mock, patch
 from app.agent import Agent
+from tests.helpers import mock_shop_scope
 from app.providers import ProviderReply, ToolCall
 from app.synthetic import SyntheticTools
 
@@ -9,6 +10,9 @@ QUESTIONS = ["Quais produtos sintéticos estão disponíveis? Liste todos do mai
              "Me dê uma lista de todos os produtos pf."]
 
 class DesktopCatalogTests(unittest.TestCase):
+    def setUp(self):
+        mock_shop_scope(self)
+
     def test_exact_multiturn_requests_discard_stale_filters_and_generic_words(self):
         with SyntheticTools() as tools:
             provider = Mock(external=False)

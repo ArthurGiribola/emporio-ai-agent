@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import Mock
 
 from app.agent import Agent
+from tests.helpers import mock_shop_scope
 from app.orders import OrderService
 from app.policies import PolicyRetriever
 from app.providers import ProviderReply, ToolCall
@@ -24,6 +25,7 @@ DATA = Path(os.environ.get("EMPORIO_DATA_DIR", Path(__file__).resolve().parents[
 
 class CatalogRegressionTests(unittest.TestCase):
     def setUp(self):
+        mock_shop_scope(self)
         self.temp = TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         path = Path(self.temp.name)

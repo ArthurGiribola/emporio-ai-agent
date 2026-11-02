@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from app.agent import Agent
+from tests.helpers import mock_shop_scope
 from app.cli import main
 from app.cloud_privacy import project_synthetic_question
 from app.providers import GeminiProvider, ProviderConfig, ProviderReply, ToolCall
@@ -28,6 +29,7 @@ def answer(text):
 
 class ConversationTests(unittest.TestCase):
     def setUp(self):
+        mock_shop_scope(self)
         self.tools = SyntheticTools()
         self.addCleanup(self.tools.close)
 
