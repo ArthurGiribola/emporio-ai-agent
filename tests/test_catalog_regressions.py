@@ -80,7 +80,7 @@ class CatalogRegressionTests(unittest.TestCase):
                                          ProviderReply("Here are five old products", (), {}),
                                          ProviderReply("", (ToolCall("search_products", {"query": "violão", "max_price_brl": "150"}),), {}), ProviderReply("Incomplete prose", (), {})]
         agent = Agent(provider, self.tools)
-        agent.run("Get product 6")
+        agent.run("Get product ID 6")
         result = agent.run("Quais violões até R$150? Quero todos os modelos.")
         self.assertEqual(result.status, "answered")
         self.assertNotIn("Ukulele", result.text)

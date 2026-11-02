@@ -1,6 +1,7 @@
 """Interactive multi-turn CLI with immutable startup identity and data scope."""
 
 import argparse
+import os
 from contextlib import ExitStack
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from app.data_session import open_tools
 from app.policies import PolicyDataError
 from app.providers import ConfigurationError, ProviderConfig, create_provider
 from app.repository import DataValidationError
+from app.diagnostics import developer_observer
 
 
 def main(argv=None, *, input_fn=input, output_fn=print, provider_factory=create_provider):
@@ -30,7 +32,7 @@ def main(argv=None, *, input_fn=input, output_fn=print, provider_factory=create_
                 output_fn("Synthetic data and policies; demo customer 1. Order 2 is not accessible.")
             else:
                 output_fn("Local snapshot data. Demo identity is not production authentication; it cannot change in chat.")
-            agent = Agent(provider_factory(config), tools)
+            agent = Agent(provider_factory(config), tools, observer=developer_observer(os.environ.get('EMPORIO_DIAGNOSTICS') == '1'))
             output_fn("Enter arbitrary shop questions. /reset clears history; /quit exits. No transcript is saved.")
             if config.provider == "gemini":
                 output_fn("Gemini receives approved synthetic data and filtered demo vocabulary, never your original free-form text. Do not enter personal information.")

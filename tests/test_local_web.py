@@ -114,11 +114,25 @@ class LocalWebTests(unittest.TestCase):
         session, _, _ = self.session(replies=[
             ProviderReply('', (ToolCall('get_product', {'product_id': 2}),), {}),
             ProviderReply('Stock is 999 units in the wrong category.', (), {})])
-        result = session.ask('What is the category and recorded stock for product 1?')
+        result = session.ask('What is the category and recorded stock for product ID 1?')
         self.assertIn('Category: Violões', result.text)
         stock = session._tools._catalog.get_product(1).stock_quantity
         self.assertIn(f'Recorded stock: {stock} units', result.text)
         self.assertNotIn('999', result.text)
+
+    def test_nondefault_trusted_order_is_identical_in_chat_and_order_view(self):
+        rows=fixture_rows()
+        rows['orders'].append(dict(rows['orders'][0],order_id='2',total_brl='123.45'))
+        rows['order_items'].append(dict(rows['order_items'][0],order_id='2'))
+        write_fixture(self.path,rows)
+        session,provider,_=self.session({'EMPORIO_ENABLE_DEMO_IDENTITY':'1','EMPORIO_DEMO_CUSTOMER_ID':'1','EMPORIO_ORDER_ID':'2'},
+            [ProviderReply('',(ToolCall('lookup_order',{'order_id':1}),),{}),ProviderReply('Made up delivery event',(),{})])
+        answer=session.ask('Qual é o status do meu pedido?')
+        order=session.order_details().order
+        self.assertEqual(order.order_id,2)
+        self.assertIn('123,45',answer.text)
+        self.assertIn('#2',answer.text)
+        self.assertNotIn('Made up',answer.text)
 
     def test_local_references_never_claim_synthetic_and_order_dto_has_no_contacts(self):
         session, _, _ = self.session({'EMPORIO_ENABLE_DEMO_IDENTITY': '1', 'EMPORIO_DEMO_CUSTOMER_ID': '1'}, [

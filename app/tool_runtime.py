@@ -13,6 +13,8 @@ from app.repository import Repository
 from app.services import CatalogService, PricingConflictError
 from app.grounding import (catalog_arguments, catalog_question, requested_budget, render_catalog, wants_all,
                           english_question, requested_order_id, requested_product_id, order_record_followup, render_quote, render_order)
+from app.grounding import requested_product_ids, brl
+from app.conversation import failure_message
 from app.return_policy import online_return_question, extract_online_return_rule, assess_online_return, render_online_return
 from app.catalog_view import product_issues
 
@@ -67,8 +69,9 @@ class ToolRuntime:
             return {**arguments, 'product_id': requested_product_id(question)}
         if isinstance(arguments, dict) and name == "get_price_quote":
             result = dict(arguments)
-            if re.search(r"\bpix\b", question.casefold()):
-                result["payment_method"] = "pix"
+            # Payment selection belongs to this question, not an old model call.
+            method = re.search(r'\b(pix|debito|debit|credito|credit|boleto)\b', normalize(question))
+            result['payment_method'] = ({'debito':'debit','credito':'credit'}.get(method[1],method[1]) if method else 'list')
             if requested_product_id(question) is not None:
                 result["product_id"] = requested_product_id(question)
             return result
@@ -85,20 +88,29 @@ class ToolRuntime:
             return "lookup_order"
         if online_return_question(question):
             return "search_policies"
-        if requested_product_id(question) is not None and re.search(r"price|cost|quote|preço|valor|pix", question.casefold()):
+        if requested_product_ids(question) and re.search(r"price|cost|quote|preco|valor|pix|desconto|discount|promocao", normalize(question)):
             return "get_price_quote"
-        if requested_product_id(question) is not None and re.search(r'stock|estoque|categor', question.casefold()):
+        if requested_product_ids(question) and not re.search(r'\b(?:garantia|warranty|policy|politica|devolucao)\b', normalize(question)):
             return 'get_product'
         # An earlier catalog/price result is not evidence for a new policy topic.
         if re.search(r"\b(?:polic(?:y|ies)|politic\w*|warrant(?:y|ies)|garanti\w*|returns?|refunds?|"
                      r"devol\w*|reembols\w*|shipping|frete\w*|opening hours|horario\w*|complaints?|reclam\w*)\b", normalize(question)):
             return "search_policies"
-        if catalog_question(question) and (wants_all(question) or requested_budget(question) is not None
-                                           or self._catalog.category_ids_from_text(question)):
+        if catalog_question(question) and not requested_product_ids(question) and not re.search(r'promoc|promotion', normalize(question)):
             return "search_products"
         return None
 
     def grounded_answer(self, question: str, results: list, model_text: str, prior_results=()) -> str:
+        references = set(requested_product_ids(question))
+        confirmed = {r['data'].get('product_id') for n, r in results if n in {'get_product','get_price_quote'} and r.get('status') == 'ok'}
+        if references and references <= confirmed:
+            results = [(n,r) for n,r in results if r.get('status') == 'ok']
+        errors = [r.get('error', 'tool_failure') for n, r in results if r.get('status') == 'error']
+        if errors:
+            # An error is not an empty catalog and cannot support fabricated absence.
+            verified = [(n, r) for n, r in results if r.get('status') == 'ok']
+            prefix = failure_message(errors[0], english_question(question))
+            return prefix + ('\n\n' + self.grounded_answer(question, verified, '') if verified else '')
         if online_return_question(question):
             for name, result in reversed(results):
                 if name == "search_policies" and result.get("status") == "ok":
@@ -129,21 +141,29 @@ class ToolRuntime:
                     for row in display['products']:
                         row['issues'] = product_issues(self._catalog.get_product(row['product_id']), english=english_question(question))
                     return render_catalog(display, self._catalog.repository.categories, english=english_question(question), synthetic=self.is_synthetic)
-        for name, result in reversed(results):
-            if (name == 'get_product' and result.get('status') == 'ok'
-                    and re.search(r'stock|estoque|categor', question.casefold())):
-                product = result['data']
-                issues = product_issues(self._catalog.get_product(product['product_id']), english=english_question(question))
-                details = '\n\n' + '\n'.join(issues) if issues else ''
+        products = {r['data']['product_id']: r['data'] for n, r in results if n == 'get_product' and r.get('status') == 'ok'}
+        quotes = [r['data'] for n, r in results if n == 'get_price_quote' and r.get('status') == 'ok']
+        if quotes:
+            return '\n\n'.join(render_quote(q, self._catalog.get_product(q['product_id']).name,
+                english=english_question(question), synthetic=self.is_synthetic,
+                issues=product_issues(self._catalog.get_product(q['product_id']), english=english_question(question))) for q in quotes)
+        if products:
+            lines = []
+            for product in products.values():
+                source = self._catalog.get_product(product['product_id'])
+                try:
+                    price = brl(self._catalog.get_price_quote(source.product_id).final_price_brl)
+                except PricingConflictError:
+                    price = 'Price unconfirmed' if english_question(question) else 'Preço não confirmado'
                 if english_question(question):
-                    availability = 'Available' if product['available'] else 'Unavailable'
-                    return (f"**{product['name']}**\n\nCategory: {product['category']}. "
-                            f"Recorded stock: {product['recorded_stock_quantity']} units. {availability}." +
-                            details)
-                availability = 'Disponível' if product['available'] else 'Indisponível'
-                return (f"**{product['name']}**\n\nCategoria: {product['category']}. "
-                        f"Estoque registrado: {product['recorded_stock_quantity']} unidades. {availability}." +
-                        details)
+                    available = 'Available' if product['available'] else 'Unavailable'
+                    lines.append(f"**{product['name']}**\n\nCategory: {product['category']}. Price per unit: {price}. Recorded stock: {product['recorded_stock_quantity']} units. {available}.")
+                else:
+                    available = 'Disponível' if product['available'] else 'Indisponível'
+                    lines.append(f"**{product['name']}**\n\nCategoria: {product['category']}. Preço por unidade: {price}. Estoque registrado: {product['recorded_stock_quantity']} unidades. {available}.")
+                lines.extend(product_issues(source, english=english_question(question)))
+            return '\n\n'.join(lines)
+        for name, result in reversed(results):
             if name == "get_price_quote" and result.get("status") == "ok":
                 data = result["data"]
                 product = self._catalog.get_product(data['product_id'])
@@ -220,9 +240,9 @@ class ToolRuntime:
                 result = self._orders.lookup_order(arguments["order_id"])
                 data = asdict(result)
                 if data["order"]:
-                    items = data["order"]["items"]
-                    data["order"]["items"] = items[:5]
-                    data["order"]["items_truncated"] = len(items) > 5
+                    # Same authorized lines as the order screen; the overall
+                    # serialized result ceiling still applies below.
+                    data['order']['items_truncated'] = False
             else:
                 result = self._policies.search(arguments["query"])
                 sections, issues = result.sections, result.issues

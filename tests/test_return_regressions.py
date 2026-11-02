@@ -119,7 +119,7 @@ class ReturnRegressionTests(unittest.TestCase):
                                          ProviderReply(WRONG, (), {}),
                                          ProviderReply("", (ToolCall("search_policies", {"query": "reembolso"}),), {}), ProviderReply(WRONG, (), {})]
         agent = Agent(provider, self.runtime())
-        agent.run("Show product 1")
+        agent.run("Show product ID 1")
         result = agent.run(QUESTION)
         self.assertTrue(result.text.startswith("Sim"))
         self.assertEqual(result.tools_called, ("search_policies",))

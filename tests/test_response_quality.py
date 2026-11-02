@@ -91,16 +91,16 @@ class ResponseQualityTests(unittest.TestCase):
             ProviderReply('', (ToolCall('search_policies', {'query': 'warranty'}),), {}),
             ProviderReply('The demonstration policy needs clarification. Section 8.1, page 24.', (), {})]
         agent = Agent(provider, self.tools)
-        agent.run('Qual é o preço do produto 1 no PIX?')
+        agent.run('Qual é o preço do produto ID 1 no PIX?')
         result = agent.run('What is your warranty policy?')
         calls = provider.complete.call_args_list
         self.assertIn('Current reply language: Brazilian Portuguese', calls[2].args[2])
         self.assertIn('Current reply language: English', calls[5].args[2])
         self.assertIn('Trusted data mode: synthetic demonstration data', calls[5].args[2])
-        self.assertEqual(calls[5].args[0][0]['content'], 'Qual é o preço do produto 1 no PIX?')
+        self.assertEqual(calls[5].args[0][0]['content'], 'Qual é o preço do produto ID 1 no PIX?')
         self.assertTrue(calls[5].args[0][-3]['content'].endswith('Please respond in English.'))
         stored_questions = [m['content'] for turn in agent._turns for m in turn if m['role'] == 'user']
-        self.assertEqual(stored_questions, ['Qual é o preço do produto 1 no PIX?', 'What is your warranty policy?'])
+        self.assertEqual(stored_questions, ['Qual é o preço do produto ID 1 no PIX?', 'What is your warranty policy?'])
         self.assertEqual(result.tools_called, ('search_policies',))
         self.assertIn('8.1', result.text)
 

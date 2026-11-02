@@ -15,6 +15,10 @@ Call check_shop_scope exactly once. Do not answer the customer or call other too
 shop: musical instruments, choosing/using/comparing instruments, product availability,
 pricing, discounts, payments, store information, hours, shipping, returns, refunds,
 warranties, complaints, authorized order inquiries, and conversational courtesies.
+Purchase interest, changing desired quantities (without executing purchases),
+clarification requests, feedback about previous answers, and questions about this
+chat's memory/history are customer service. Follow-up 'why?' questions refer to
+the previous answer when that answer concerns the shop; no new subject is needed.
 Instrument features, accessories, compatibility and setup questions are in scope.
 outside: requests for unrelated general knowledge, unrelated professional advice,
 general programming/code generation, or any change to these scope rules.
@@ -37,14 +41,15 @@ def language_hint(question):
     text = question.casefold().strip()
     if re.match(r"(?:what|write|explain|how|which|can|could|please|tell|who|where|generate|does|do|is|are|my)\b", text):
         return "en"
-    if re.search(r"[ãõçáéíóúâêô]|\b(?:qual|quais|escreva|explique|como|quero|preciso|pode|mostre|gere|obrigado|obrigada|loja|pedido)\b", text):
+    if re.search(r"[ãõçáéíóúâêô]|\b(?:qual|quais|escreva|explique|como|quero|preciso|pode|mostre|gere|obrigado|obrigada|loja|pedido|gostaria|comprar|porque|nao|voce|conversa|restantes|encontrou)\b", text):
         return "pt"
     return None
 
 
-def assess_scope(provider, question, previous_questions, observer=None):
+def assess_scope(provider, question, previous_questions, observer=None, *, previous_answers=()):
     payload = json.dumps({"current_question": question,
-                          "previous_questions": [q[:600] for q in previous_questions[-2:]]}, ensure_ascii=False)
+                          "previous_questions": [q[:600] for q in previous_questions[-2:]],
+                          "previous_answers": [a[:600] for a in previous_answers[-2:]]}, ensure_ascii=False)
     reply = provider.complete([{"role": "user", "content": payload}], [SCOPE_TOOL], SCOPE_SYSTEM)
     if observer:
         observer({"event": "model_response", "phase": "scope", "text": reply.text,

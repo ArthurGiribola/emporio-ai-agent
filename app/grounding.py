@@ -213,9 +213,22 @@ def render_order(data: dict, *, english: bool, synthetic: bool = False) -> str:
         if "historical_unit_prices_unavailable" in order["warnings"]:
             lines.append("O preço pago por cada item não está informado.")
         lines += ["", "Essas são as informações registradas do pedido; não fiz nenhuma alteração nele."]
+    items = order.get('items', [])
+    item_lines = [('Recorded products:' if english else 'Produtos registrados:')]
+    item_lines.extend(f"- {item['quantity']}× {item['product_name']}" for item in items)
+    if not items:
+        item_lines.append('Products are not recorded.' if english else 'Os produtos não estão informados no registro.')
+    if order.get('items_truncated'):
+        item_lines.append('This is a partial item list.' if english else 'Esta é uma lista parcial de produtos.')
+    lines[2:2] = item_lines + ['']
     return "\n".join(lines)
 
 
 def requested_product_id(question: str) -> int | None:
-    matches = {int(n) for n in re.findall(r"\b(?:product|produto)\s+(?:(?:synthetic|sintetico)\s+)?#?(\d{1,12})\b", normalize(question))}
+    matches = set(requested_product_ids(question))
     return next(iter(matches)) if len(matches) == 1 else None
+
+
+def requested_product_ids(question: str) -> tuple[int, ...]:
+    return tuple(dict.fromkeys(int(n) for n in re.findall(
+        r'\b(?:product|produto)\s+(?:(?:id|identificador|synthetic|sintetico)\s+)?#?(\d{1,12})\b', normalize(question))))

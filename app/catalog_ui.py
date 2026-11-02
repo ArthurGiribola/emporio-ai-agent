@@ -88,6 +88,7 @@ def show_catalog():
             label = f'Item {entry.position}\n\n**{_label(entry.name)}**\n\n{price} · {available}'
             if st.button(label, key=f'catalog_product_{entry.product_id}', width='stretch',
                          icon=':material/chevron_right:', icon_position='right'):
+                st.session_state.shop_session.select_product(entry.product_id)
                 st.session_state.catalog_pick = entry.position
                 st.rerun()
         if not rows:

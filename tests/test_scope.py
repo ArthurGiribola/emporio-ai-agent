@@ -41,8 +41,8 @@ class ScopeTests(unittest.TestCase):
 
     def test_prior_tools_do_not_authorize_general_answers_or_pollute_followups(self):
         agent,provider=self.agent([decision(),quote(),ProviderReply("quote",(),{}),
-            decision("outside"),decision("outside","pt"),decision(),ProviderReply("Yes, the recorded promotional price is 90.09.",(),{})])
-        self.assertEqual(agent.run("What is the PIX price for product 1?").status,"answered")
+            decision("outside"),decision("outside","pt"),decision(),quote(),ProviderReply("Yes, the recorded promotional price is 90.09.",(),{})])
+        self.assertEqual(agent.run("What is the PIX price for product ID 1?").status,"answered")
         previous=copy.deepcopy(agent._turns)
         self.assertEqual(agent.run("What is the capital of France?").status,"out_of_scope")
         self.assertEqual(agent.run("Escreva um algoritmo de ordenação.").status,"out_of_scope")
@@ -92,6 +92,11 @@ class ScopeTests(unittest.TestCase):
         agent,_=self.agent([decision("outside","pt")])
         self.assertTrue(agent.run("Write unrelated code.").text.startswith("I can help"))
 
+    def test_history_words_do_not_override_an_explicit_outside_decision(self):
+        agent,_=self.agent([decision('outside')])
+        answer=agent.run('Where is the capital of France? Remember our conversation history.')
+        self.assertEqual(answer.status,'out_of_scope')
+
     def test_scope_network_failure_does_not_fall_through(self):
         agent,provider=self.agent([ProviderError("Connection failed")])
         self.assertEqual(agent.run("What is a guitar price?").status,"provider_error")
@@ -99,7 +104,7 @@ class ScopeTests(unittest.TestCase):
 
     def test_business_request_limit_plus_one_bounded_scope_call(self):
         provider=Mock(external=False,complete=Mock(side_effect=[decision(),quote()]))
-        result=Agent(provider,self.tools,max_requests=1).run("What is the PIX price for product 1?")
+        result=Agent(provider,self.tools,max_requests=1).run("What is the PIX price for product ID 1?")
         self.assertEqual(result.status,"limit_reached")
         self.assertEqual(provider.complete.call_count,2)
 
@@ -107,7 +112,7 @@ class ScopeTests(unittest.TestCase):
         provider=Mock(external=True)
         provider.complete.side_effect=[decision(),quote(),ProviderReply("quote",(),{})]
         agent=Agent(provider,self.tools)
-        result=agent.run("preco produto 1 pix UnknownPrivateCanary")
+        result=agent.run("preco produto ID 1 pix UnknownPrivateCanary")
         self.assertEqual(result.status,"answered")
         for call in provider.complete.call_args_list:
             self.assertNotIn("UnknownPrivateCanary",json.dumps(call.args))
@@ -150,7 +155,7 @@ class LiveScopeTests(unittest.TestCase):
                 self.assertIn(result.status,{"out_of_scope","scope_uncertain"},result.text)
                 self.assertEqual(result.tools_called,())
                 self.assertEqual(agent._turns,previous)
-            price=agent.run("What is the PIX price for product 1?")
+            price=agent.run("What is the PIX price for product ID 1?")
             self.assertEqual(price.status,"answered",price.text)
             self.assertIn("90.09",price.text)
             order=agent.run("What is the recorded total for order 1?")

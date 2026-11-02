@@ -44,7 +44,7 @@ class EnglishEvaluationTests(unittest.TestCase):
         provider.complete.side_effect = [ProviderReply("", (ToolCall("get_price_quote", {"product_id": 3, "payment_method": "list"}),), {}),
                                          ProviderReply("PIX cannot be used with the promotion; consult our live system", (), {})]
         events = []
-        result = Agent(provider, self.tools, observer=events.append).run("What is the PIX price for product 1? Can I combine it with the promotion?")
+        result = Agent(provider, self.tools, observer=events.append).run("What is the PIX price for product ID 1? Can I combine it with the promotion?")
         self.assertIn("90.09", result.text)
         self.assertIn("no additional PIX discount", result.text)
         self.assertNotIn("cannot be used", result.text)

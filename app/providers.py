@@ -20,6 +20,10 @@ MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 class ProviderError(RuntimeError):
     """Sanitized operational failure; never includes headers, keys, or response bodies."""
 
+    def __init__(self, message, *, code='provider_error'):
+        super().__init__(message)
+        self.code = code
+
 
 class ConfigurationError(ValueError):
     """Provider configuration is incomplete or outside the no-paid/local policy."""
@@ -92,19 +96,26 @@ def http_json(url: str, payload: dict, headers: dict, timeout: int) -> dict:
         with build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=timeout) as response:
             raw = response.read(MAX_RESPONSE_BYTES + 1)
         if len(raw) > MAX_RESPONSE_BYTES:
-            raise ProviderError("Provider response exceeded the size limit")
+            raise ProviderError("Provider response exceeded the size limit", code='response_too_large')
         result = json.loads(raw)
         if not isinstance(result, dict):
-            raise ProviderError("Provider returned an invalid response")
+            raise ProviderError("Provider returned an invalid response", code='invalid_response')
         return result
     except HTTPError as error:
         code = error.code
         error.close()
         if code == 429:
-            raise ProviderError("Provider quota/rate limit reached; no retry or paid fallback was attempted") from None
-        raise ProviderError(f"Provider request failed (HTTP {code}); check configuration or availability") from None
-    except (URLError, TimeoutError, OSError, UnicodeError, ValueError, RecursionError):
-        raise ProviderError("Provider connection or JSON response failed") from None
+            raise ProviderError("Provider quota/rate limit reached; no retry or paid fallback was attempted", code='rate_limit') from None
+        raise ProviderError(f"Provider request failed (HTTP {code}); check configuration or availability", code='http_error') from None
+    except TimeoutError:
+        raise ProviderError('Provider request timed out', code='timeout') from None
+    except URLError as error:
+        code = 'timeout' if isinstance(error.reason, TimeoutError) else 'connection_error'
+        raise ProviderError('Provider connection failed', code=code) from None
+    except (UnicodeError, ValueError, RecursionError):
+        raise ProviderError('Provider returned invalid JSON', code='invalid_json') from None
+    except OSError:
+        raise ProviderError('Provider connection failed', code='connection_error') from None
 
 
 @dataclass(frozen=True)
@@ -124,16 +135,16 @@ class ProviderReply:
 def _calls(values: list, *, gemini: bool) -> tuple[ToolCall, ...]:
     result = []
     if not isinstance(values, list) or len(values) > 8:
-        raise ProviderError("Invalid or excessive provider tool calls")
+        raise ProviderError("Invalid or excessive provider tool calls", code='invalid_tool_calls')
     for value in values:
         function = value if gemini else value.get("function", {}) if isinstance(value, dict) else {}
         if (not isinstance(function, dict) or not isinstance(function.get("name"), str)
                 or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", function["name"])
                 or not isinstance(function.get("args" if gemini else "arguments", {}), dict)):
-            raise ProviderError("Invalid provider tool call")
+            raise ProviderError("Invalid provider tool call", code='invalid_tool_calls')
         call_id = function.get("id", "") if gemini else str(function.get("index", ""))
         if not isinstance(call_id, str) or len(call_id) > 200:
-            raise ProviderError("Invalid provider call identifier")
+            raise ProviderError("Invalid provider call identifier", code='invalid_tool_calls')
         result.append(ToolCall(function["name"], function.get("args" if gemini else "arguments", {}), call_id))
     return tuple(result)
 
@@ -221,13 +232,13 @@ class OllamaProvider:
         try:
             native = response["message"]
             if not response.get("done") or response.get("done_reason") == "length" or native.get("role") != "assistant":
-                raise ProviderError("Ollama response was incomplete")
+                raise ProviderError("Ollama response was incomplete", code='output_limit' if response.get('done_reason') == 'length' else 'invalid_response')
             text = native.get("content", "")
             if not isinstance(text, str):
-                raise ProviderError("Invalid Ollama content")
+                raise ProviderError("Invalid Ollama content", code='invalid_response')
             return ProviderReply(text, _calls(native.get("tool_calls", []), gemini=False), copy.deepcopy(native))
         except (KeyError, TypeError, AttributeError):
-            raise ProviderError("Ollama returned an invalid response") from None
+            raise ProviderError("Ollama returned an invalid response", code='invalid_response') from None
 
 
 def create_provider(config: ProviderConfig, transport: Callable = http_json):

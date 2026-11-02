@@ -10,6 +10,7 @@ from app.orders import OrderLookupResult
 from app.providers import ProviderConfig, create_provider
 from app.catalog_view import CatalogView
 from app.grounding import english_question
+from app.diagnostics import developer_observer
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,7 @@ class ChatAnswer:
 class ChatSession:
     def __init__(self, *, provider_factory=create_provider, environment=None):
         env = os.environ if environment is None else environment
+        self._diagnostics = developer_observer(env.get('EMPORIO_DIAGNOSTICS') == '1')
         # Deliberately independent of the CLI's Gemini default and API keys.
         config = ProviderConfig(provider="ollama", model=env.get("OLLAMA_MODEL", "qwen3:4b"),
                                 base_url=env.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
@@ -48,7 +50,7 @@ class ChatSession:
             demo_customer_id=int(identity) if identity is not None else None)
         self._tools = self._data_context.__enter__()
         try:
-            self._agent = Agent(provider_factory(config), self._tools, observer=self._observe)
+            self._agent = Agent(provider_factory(config), self._tools, observer=self._observe, order_id=self._order_id)
         except Exception:
             self._data_context.__exit__(None, None, None)
             raise
@@ -65,6 +67,7 @@ class ChatSession:
         return f'LOCAL · Dados originais · Ollama local · {identity} · Somente leitura'
 
     def _observe(self, event):
+        self._diagnostics(event)
         # Keep only validated citation coordinates, never raw model/tool diagnostics.
         if event.get("event") != "tool_result" or event.get("name") != "search_policies":
             return
@@ -86,16 +89,15 @@ class ChatSession:
         self._references.clear()
         try:
             result = self._agent.run(question)
-        except Exception:
+        except Exception as error:
             # Never render an exception, file path, response body, or traceback.
-            return ChatAnswer("This turn could not be completed. Please reset the conversation and try again.", error=True)
+            self._diagnostics({'event':'unexpected_failure','phase':'orchestration', 'exception_type':type(error).__name__})
+            return ChatAnswer('I could not complete this lookup. Please retry; your conversation was kept.' if english_question(question) else
+                              'Não consegui concluir esta consulta. Tente novamente; sua conversa foi mantida.', error=True)
         if result.status in {"out_of_scope", "scope_uncertain"}:
             return ChatAnswer(result.text)
         if result.status != "answered":
-            text = ("The local model could not complete this turn. Check that Ollama is running and the model is installed, then try again."
-                    if result.status == "provider_error" else
-                    "I could not verify an answer. Try a shorter, more specific question, or reset the conversation.")
-            return ChatAnswer(text, error=True)
+            return ChatAnswer(result.text, error=True)
         if result.catalog is not None:
             count = len(result.catalog.entries)
             if count == 0:
@@ -115,6 +117,9 @@ class ChatSession:
             return self._tools._orders.lookup_order(self._order_id)
         except Exception:
             return OrderLookupResult("error", None, "Order lookup could not be completed.")
+
+    def select_product(self, product_id):
+        self._agent.focus_product(product_id)
 
     def reset(self):
         self._agent.reset()

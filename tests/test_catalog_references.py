@@ -33,9 +33,10 @@ class CatalogReferenceTests(unittest.TestCase):
             result, error = resolve_list_reference(q, (81, 143))
             self.assertIsNone(error)
             self.assertIn('143', result)
-        self.assertEqual(resolve_list_reference('produto ID 81 no PIX', (99,))[0], 'produto 81 no PIX')
-        for q, ids in [('item 63', (81,)), ('item 1', ()), ('item 1 e produto 2', (81, 143))]:
+        self.assertEqual(resolve_list_reference('produto ID 81 no PIX', (99,))[0], 'produto ID 81 no PIX')
+        for q, ids in [('item 63', (81,)), ('item 1', ()), ('produto 20', ())]:
             self.assertIsNotNone(resolve_list_reference(q, ids)[1])
+        self.assertEqual(resolve_list_reference('itens 1 e 2', (81,143))[0], 'produto ID 81, produto ID 143')
         self.assertEqual(resolve_list_reference('pedido 2', (81, 143)), ('pedido 2', None))
         self.assertEqual(resolve_list_reference('item 1 do pedido 2', (81, 143)), ('item 1 do pedido 2', None))
 
