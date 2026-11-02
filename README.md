@@ -18,17 +18,21 @@ An optional local Streamlit demonstration reuses the same agent; the CLI remains
   pages, retrieves related rules, and reports conflicts/insufficient evidence.
 - Order ownership is checked inside a read-only service bound at startup.
   Recorded historical totals are preserved; missing fields remain unknown.
-- Each non-greeting turn starts with one structured scope check using the same
-  configured LLM. Python requires a valid shop decision before business tools or
-  answers; unrelated requests receive a polite Portuguese/English redirect.
+- Business turns start with one structured scope check using the same configured
+  LLM. Python requires a valid shop decision before business tools; unrelated
+  requests receive a polite Portuguese/English redirect. Narrow chat-history help
+  and explanations of an actual previous failure can be answered locally without
+  inventing business facts.
   Uncertain/malformed decisions ask for clarification and are not stored in memory.
-  Only recent customer questions resolve genuine follow-ups; old tool evidence
+  Recent questions and verified answers resolve genuine follow-ups; old tool evidence
   cannot authorize an unrelated topic. Gemini projection still happens first.
 - After that check, each turn allows at most four business-model requests and six
   business tool calls: five total model requests including scope. This preserves
   the existing grounding-recovery budget at the cost of one extra round trip. Memory
-  retains at most four complete exchanges, trims whole exchanges, and enforces
-  character limits. `/reset` clears context without changing the bound identity.
+  retains at most eight complete exchanges, compacts catalog evidence explicitly
+  as partial, trims whole exchanges, and enforces character limits. A malformed or
+  incomplete business response gets at most one recovery request within that same
+  budget. `/reset` clears context without changing the bound identity.
 - Native tool-call responses and Gemini thought signatures are preserved. Tool
   names/arguments are validated independently of model schemas. Decimal/dates
   serialize explicitly. Output sizes, HTTP timeouts, and response sizes are bounded.
@@ -152,10 +156,28 @@ change its provider. Stop the server with Ctrl+C. Do not expose it with a tunnel
 or public bind; this demo has no authentication system.
 
 Session objects are never globally cached. Each browser session has its own
-agent; four exchanges of display/model memory are retained. Refreshing or
+agent and a complete visible transcript for the active session. Chat, Catalog,
+Product Details and My Order navigation never clear it. Bounded LLM context is
+separate: at most eight exchanges and 20,000 serialized characters are retained,
+with whole call/result pairs. Stable catalog references and recent validated
+product selections are retained separately. Refreshing or
 closing the tab can lose the session. Policy captions show only retrieved
 citation coordinates, never raw tool diagnostics. No conversation export or
 transcript persistence is added. Synthetic policy rules are fictitious.
+
+An unqualified price uses the normal price with any active promotion. Payment
+discounts require an explicit payment method in the current question; an old
+model-supplied PIX argument cannot silently discount a different instrument.
+Product selections in the browser become trusted context for questions such as
+"Qual é o preço dele?". Ambiguous references ask for clarification. Natural
+"meu pedido" questions use the same startup-selected order as the order screen;
+ownership remains enforced inside the read-only service.
+
+For optional local developer diagnostics, set `EMPORIO_DIAGNOSTICS=1` before
+launching the CLI or desktop. Events on stderr distinguish provider failures,
+timeouts, malformed output, tool errors, recovery and execution limits. They omit
+questions, response bodies, argument values, customer IDs and policy text. This
+does not enable a WebView inspector or put diagnostics into the customer UI.
 
 ```powershell
 .\.venv-ui\Scripts\python.exe -m unittest tests.test_web -v
@@ -317,7 +339,7 @@ No data is silently routed from Ollama to Gemini.
   details, and notes. Foreign/nonexistent/malformed orders share one denial body.
   There are no order mutation, refund, cancellation, shipment, or identity tools.
 - Tool outputs are minimized: five catalog preview entries (or every match on
-  an explicit all-results request), five order lines, four policy excerpts of
+  an explicit all-results request), authorized order lines, four policy excerpts of
   500 characters, and a 12K-character result ceiling. Truncation is marked and
   never presented as complete. Category, availability, budget, sorting, and
   catalog-list wording are enforced in Python. Source references, quality warnings, and unknown fields are retained.
@@ -401,6 +423,9 @@ approval gate and fail-closed paths. See [scope verification](docs/SCOPE_FIX.md)
 Restart an already-open CLI/Streamlit/desktop process to load updated code.
 
 ## Correctness regression checks
+
+See the [conversational reliability audit](docs/RELIABILITY_AUDIT.md) for confirmed
+causes, automated/live verification, and genuine synthetic conversation evidence.
 
 Catalog categories, budget, active stock, exhaustive counts, sorting, and list
 wording are enforced in Python for explicit requests. Online-return timing is
