@@ -64,18 +64,19 @@ def style(light):
     .st-key-order_detail {{border-top:1px solid {border};padding-top:14px;}}
     .st-key-order_detail [data-testid="stVerticalBlock"] {{gap:10px;}}
     .st-key-catalog_screen [data-testid="stVerticalBlock"] {{gap:8px;}}
-    .catalog-row {{padding:10px 0;border-bottom:1px solid {border};}}
-    .catalog-head {{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;font-size:13px;line-height:1.45;}}
-    .catalog-head strong {{min-width:0;overflow-wrap:anywhere;font-weight:500;}}
     .catalog-price {{font-weight:600;white-space:nowrap;font-size:13px;}}
-    .catalog-meta {{color:{muted};font-size:11px;line-height:1.5;margin-top:4px;}}
     .catalog-stock {{margin-top:14px;font-size:13px;}}
     .st-key-catalog_controls [data-testid="stWidgetLabel"] p {{font-size:11px;}}
     .stMainBlockContainer:has(.st-key-catalog_screen) {{padding-top:24px;}}
-    .st-key-mini_chat .st-key-catalog_rows button {{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid {border};border-radius:0;min-height:62px;padding:8px 0;}}
-    .st-key-catalog_rows button [data-testid="stMarkdownContainer"] {{width:100%;text-align:left;}}
-    .st-key-catalog_rows button p {{text-align:left;font-size:11px;line-height:1.5;}}
-    .st-key-catalog_rows button strong {{font-size:13px;font-weight:500;}}
+    /* Streamlit 1.66: the full-width button contains two centered flex wrappers.
+       Stretch its text wrapper; the native right icon stays outside that column. */
+    .st-key-mini_chat .st-key-catalog_rows button {{width:100%;text-align:left;border:0;border-bottom:1px solid {border};border-radius:0;min-height:68px;padding:8px 10px;margin:0;}}
+    .st-key-catalog_rows button > div {{width:100%;justify-content:flex-start;}}
+    .st-key-catalog_rows button [data-has-shortcut] {{flex:1;min-width:0;justify-content:flex-start;}}
+    .st-key-catalog_rows button [data-testid="stMarkdownContainer"] {{flex:1;width:100%;min-width:0;text-align:left;}}
+    .st-key-catalog_rows button [data-testid="stMarkdownContainer"] p {{text-align:left;font-size:11px;line-height:16px;margin:0;padding:0;}}
+    .st-key-catalog_rows button [data-testid="stMarkdownContainer"] p:first-child {{color:{muted};font-size:10px;line-height:14px;}}
+    .st-key-catalog_rows button strong {{display:block;font-size:13px;font-weight:500;line-height:18px;}}
     .st-key-catalog_rows button:focus-visible {{outline:2px solid {muted};outline-offset:-2px;}}
     .order-summary {{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px;}}
     .order-summary h2 {{font-size:26px;letter-spacing:-.8px;margin:0;color:{text};padding:0;}}
@@ -100,6 +101,7 @@ def style(light):
     .brand-mark i {{display:block;width:3px;background:{text};border-radius:4px;}}
     .brand strong {{font-size:20px;font-weight:700;letter-spacing:-.6px;line-height:1.2;}}
     .brand small {{display:block;color:{muted};font-size:12px;margin-top:4px;}}
+    .brand .mode-indicator {{display:inline;color:{muted};font-size:10px;letter-spacing:.6px;margin-left:8px;}}
     .st-key-mini_chat button {{background:transparent;color:{text};border:1px solid {border};border-radius:12px;font-size:12px;box-shadow:none;}}
     .st-key-mini_chat button:hover {{background:{bubble};border-color:{muted};color:{text};}}
     .st-key-mini_chat [data-testid="stHorizontalBlock"] {{flex-wrap:nowrap;}}
@@ -128,14 +130,14 @@ def show_order():
     if back.button("←", key="back_to_chat", help="Voltar à conversa"):
         st.session_state.view = "chat"
         st.rerun()
-    heading.markdown(f"**Meu pedido** · {st.session_state.shop_session.mode}")
+    heading.markdown('**Meu pedido**')
     with st.container(height=410, border=False, key="order_detail"):
         result = st.session_state.shop_session.order_details()
         if result.status == "error":
             st.warning("Não foi possível consultar o pedido. Tente novamente mais tarde.")
             return
         if result.status != "available" or result.order is None:
-            st.info("As informações do pedido não estão disponíveis para esta sessão. É necessária uma identidade de sessão autorizada; o chat não pode alterá-la.")
+            st.info("As informações do pedido não estão disponíveis para esta sessão. O acesso exige uma identidade de demonstração autorizada, configurada ao iniciar o aplicativo. A conversa não pode configurar ou alterar essa identidade.")
             return
         order = result.order
         statuses = {"pending": "Pendente", "confirmed": "Confirmado", "shipped": "Enviado", "delivered": "Entregue", "cancelled": "Cancelado"}
@@ -160,8 +162,7 @@ def show_order():
         else:
             tracking = '<div class="order-empty"><span class="order-icon" aria-hidden="true">◇</span><div><strong>Rastreamento ainda não informado</strong><div class="order-note" style="margin-top:3px">Código de rastreamento não informado no registro.</div></div></div>'
         st.markdown(f'<section class="order-card"><div class="order-label">Rastreamento</div>{tracking}</section>', unsafe_allow_html=True)
-        record = "registro sintético" if st.session_state.shop_session.mode == 'DEMO' else "registro da loja"
-        st.caption(f"Data efetiva de entrega não disponível. Consulta somente leitura a um {record}, sem atualização em tempo real.")
+        st.caption('Data efetiva de entrega não informada no registro.')
 
 
 
@@ -179,7 +180,9 @@ def main():
     with st.container(key="mini_chat"):
         brand, theme, reset = st.columns([8, 1, 1], gap="small", vertical_alignment="center")
         with brand:
-            st.html('<div class="brand"><div class="brand-mark" aria-hidden="true"><i style="height:12px"></i><i style="height:24px"></i><i style="height:32px"></i><i style="height:20px"></i><i style="height:10px"></i></div><div><strong>Empório da Música</strong><small>Atendimento inteligente</small></div></div>')
+            mode = escape(st.session_state.shop_session.mode)
+            st.html('<div class="brand"><div class="brand-mark" aria-hidden="true"><i style="height:12px"></i><i style="height:24px"></i><i style="height:32px"></i><i style="height:20px"></i><i style="height:10px"></i></div><div><strong>Empório da Música</strong><small>Atendimento inteligente'
+                    f'<span class="mode-indicator">{mode}</span></small></div></div>')
         with theme:
             st.button("☾" if st.session_state.get("light_theme", False) else "☀", key="theme_toggle", help="Alternar tema claro/escuro", on_click=toggle_theme, disabled=busy)
         with reset:
@@ -224,7 +227,6 @@ def main():
             st.session_state.pending_question = submitted
             st.rerun()
         question = st.session_state.get("pending_question")
-        st.caption(st.session_state.shop_session.mode_caption)
         if question:
             st.session_state.messages.append({"role": "user", "text": question})
             with conversation:

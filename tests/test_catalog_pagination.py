@@ -108,8 +108,8 @@ class CatalogPageUITests(unittest.TestCase):
     def test_real_rows_pagination_category_selection_and_back(self):
         self.open_catalog()
         self.assertFalse(any(s.key == 'catalog_pick' for s in self.app.selectbox))
-        self.assertIn('Item 1 · Synthetic instrument 1', self.app.button(key='catalog_product_1001').label)
-        self.assertIn('Category 2', self.app.button(key='catalog_product_1001').label)
+        self.assertEqual(self.app.button(key='catalog_product_1001').label,
+                         'Item 1\n\n**Synthetic instrument 1**\n\nR$ 1,00 · Disponível')
         self.assertIn('R$ 1,00', self.app.button(key='catalog_product_1001').label)
         self.assertEqual(len([b for b in self.app.button if b.key and b.key.startswith('catalog_product_')]), 4)
         self.assertTrue(self.app.button(key='catalog_previous').disabled)
@@ -142,6 +142,25 @@ class CatalogPageUITests(unittest.TestCase):
         self.assertFalse(self.app.selectbox)
         self.assertIn('A short normal answer.', self.app.chat_message[-1].markdown[0].value)
         self.assertFalse(self.app.exception)
+
+    def test_row_hierarchy_and_header_only_mode_in_both_themes(self):
+        self.open_catalog()
+        for _ in range(4):
+            self.app.button(key='catalog_next').click().run()
+        for light in (False, True):
+            if light:
+                self.app.button(key='theme_toggle').click().run()
+            for position in range(17, 21):
+                row = self.app.button(key=f'catalog_product_{1000+position}')
+                self.assertEqual(row.label.split('\n\n'),
+                    [f'Item {position}', f'**Synthetic instrument {position}**', f'R$ {position},00 · Disponível'])
+                self.assertEqual(row.proto.icon_position, 1)  # Native right-side chevron.
+            markup = self.markup()
+            self.assertEqual(markup.count('class="mode-indicator">DEMO'), 1)
+            self.assertFalse(any('Ollama' in c.value or 'Identidade fixa' in c.value for c in self.app.caption))
+            self.assertFalse(self.app.exception)
+        self.app.button(key='catalog_product_1017').click().run()
+        self.assertFalse(any('Somente leitura' in c.value for c in self.app.caption))
 
     def test_empty_result_remains_conversational_and_does_not_show_stale_catalog(self):
         self.open_catalog()

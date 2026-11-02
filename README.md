@@ -246,6 +246,13 @@ and reset clears them. Ambiguous or out-of-range positions ask for clarification
 Use a product name when unsure; explicit `produto ID 81` retains ID-based lookup
 for technical testing. Order numbers are not interpreted as catalog positions.
 
+The interface shows a subtle LOCAL/DEMO indicator in the shared header. Runtime,
+data-source and identity details belong to these setup instructions, rather than
+a customer-facing footer. Both modes use local Ollama in the desktop interface;
+LOCAL reads the configured private files, while DEMO uses only synthetic fixtures.
+Orders remain read-only and require the existing startup-bound identity. If access
+is unavailable, the order view explains this without exposing order information.
+
 If startup fails despite a working standalone pywebview window, do not assume a
 missing dependency. Enable local developer diagnostics in the same PowerShell
 session and rerun using the environment where desktop dependencies are installed:

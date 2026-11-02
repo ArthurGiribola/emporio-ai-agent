@@ -61,13 +61,12 @@ def show_catalog():
     if back.button('←', key='catalog_back', help='Voltar à conversa'):
         st.session_state.view = 'chat'
         st.rerun()
-    heading.markdown(f'**Catálogo** · {st.session_state.shop_session.mode}')
+    heading.markdown('**Catálogo**')
     st.session_state.setdefault('catalog_page', 0)
     st.session_state.setdefault('catalog_pick', None)
     selected = next((e for e in view.entries if e.position == st.session_state.catalog_pick), None)
     if selected is not None:
         _details(selected)
-        st.caption(st.session_state.shop_session.mode_caption)
         return
     search, category_id = st.session_state.get('catalog_filters', ('', 0))
     st.session_state.setdefault('catalog_search', search)
@@ -82,13 +81,13 @@ def show_catalog():
     rows, count, page, pages = catalog_page(view, st.session_state.catalog_category,
                                           st.session_state.catalog_page, st.session_state.catalog_search)
     st.session_state.catalog_page = page
-    with st.container(height=280, border=False, key='catalog_rows'):
+    with st.container(height=310, border=False, key='catalog_rows'):
         for entry in rows:
             price = brl(entry.price_brl) if entry.price_brl is not None else 'Preço não confirmado'
             available = 'Disponível' if entry.available else 'Indisponível'
-            label = (f'**Item {entry.position} · {_label(entry.name)}**  \n'
-                     f'{price} · {_label(entry.category or "Categoria não informada")} · {available}')
-            if st.button(label, key=f'catalog_product_{entry.product_id}', use_container_width=True):
+            label = f'Item {entry.position}\n\n**{_label(entry.name)}**\n\n{price} · {available}'
+            if st.button(label, key=f'catalog_product_{entry.product_id}', width='stretch',
+                         icon=':material/chevron_right:', icon_position='right'):
                 st.session_state.catalog_pick = entry.position
                 st.rerun()
         if not rows:
@@ -102,4 +101,3 @@ def show_catalog():
         st.caption(f'Exibindo {page * PAGE_SIZE + 1}–{page * PAGE_SIZE + len(rows)} de {count}. Itens mantêm os números da lista original.')
     if view.truncated:
         st.caption(f'Consulta parcial: {len(view.entries)} de {view.total_matches} resultados. Solicite todos para ampliar.')
-    st.caption(st.session_state.shop_session.mode_caption)

@@ -176,8 +176,10 @@ class StreamlitPageTests(unittest.TestCase):
             session._tools._orders=OrderService(session._tools._catalog.repository,config)
             with patch("app.web_session.ChatSession", return_value=session):
                 app.run()
+                self.assertFalse(any('identidade' in i.value.casefold() for i in app.info))
                 next(b for b in app.button if b.label == "Meu pedido").click().run()
                 self.assertTrue(any("não estão disponíveis" in i.value for i in app.info))
+                self.assertTrue(any('configurada ao iniciar' in i.value for i in app.info))
                 self.assertFalse(any("99,00" in m.value for m in app.markdown))
                 self.assertFalse(app.exception)
 
