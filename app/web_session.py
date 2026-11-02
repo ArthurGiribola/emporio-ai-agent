@@ -1,12 +1,13 @@
-"""Session-scoped synthetic demo; no private paths, cloud provider, or identity UI."""
+"""Startup-bound DEMO/LOCAL sessions; no cloud provider or identity UI."""
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 from app.agent import Agent
+from app.data_session import open_tools
 from app.orders import OrderLookupResult
 from app.providers import ProviderConfig, create_provider
-from app.synthetic import SyntheticTools
 
 
 @dataclass(frozen=True)
@@ -24,12 +25,41 @@ class ChatSession:
                                 base_url=env.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
                                 timeout_seconds=120, max_output_tokens=2048)
         self._references = []
-        self._tools = SyntheticTools()
+        self._mode = env.get('EMPORIO_DATA_MODE', 'demo').lower()
+        if self._mode not in {'demo', 'local'}:
+            raise ValueError('EMPORIO_DATA_MODE must be demo or local')
+        enabled = env.get('EMPORIO_ENABLE_DEMO_IDENTITY', '0')
+        if enabled not in {'0', '1'}:
+            raise ValueError('Demo identity opt-in must be 0 or 1')
+        self._identity_enabled = self._mode == 'demo' or enabled == '1'
+        identity = env.get('EMPORIO_DEMO_CUSTOMER_ID')
+        self._order_id = int(env.get('EMPORIO_ORDER_ID', '1'))
+        if not 1 <= self._order_id < 10**12:
+            raise ValueError('Invalid startup order')
+        if self._mode == 'demo' and any(env.get(key) for key in (
+                'EMPORIO_DATA_DIR', 'EMPORIO_POLICY_PATH', 'EMPORIO_DEMO_CUSTOMER_ID', 'EMPORIO_ORDER_ID')):
+            raise ValueError('DEMO uses fixed synthetic resources and order only')
+        data_dir = env.get('EMPORIO_DATA_DIR', str(Path(__file__).resolve().parents[1] / 'data')) if self._mode == 'local' else Path('data')
+        self._data_context = open_tools('synthetic' if self._mode == 'demo' else 'local', data_dir=data_dir,
+            policy_path=env.get('EMPORIO_POLICY_PATH'), enable_demo_identity=enabled == '1',
+            demo_customer_id=int(identity) if identity is not None else None)
+        self._tools = self._data_context.__enter__()
         try:
             self._agent = Agent(provider_factory(config), self._tools, observer=self._observe)
         except Exception:
-            self._tools.close()
+            self._data_context.__exit__(None, None, None)
             raise
+
+    @property
+    def mode(self):
+        return self._mode.upper()
+
+    @property
+    def mode_caption(self):
+        if self._mode == 'demo':
+            return 'DEMO · Dados sintéticos · Ollama local · Identidade fixa · Somente leitura'
+        identity = 'Identidade de demonstração fixa' if self._identity_enabled else 'Pedidos sem identificação'
+        return f'LOCAL · Dados originais · Ollama local · {identity} · Somente leitura'
 
     def _observe(self, event):
         # Keep only validated citation coordinates, never raw model/tool diagnostics.
@@ -44,7 +74,8 @@ class ChatSession:
                     and all(c in "0123456789." for c in section)
                     and isinstance(pages, (list, tuple)) and pages
                     and all(type(p) is int and p > 0 for p in pages)):
-                label = f"Synthetic policy · Section {section} · page(s) {', '.join(map(str, pages))}"
+                source = 'Synthetic policy' if self._mode == 'demo' else 'Store policy'
+                label = f"{source} · Section {section} · page(s) {', '.join(map(str, pages))}"
                 if label not in self._references:
                     self._references.append(label)
 
@@ -65,9 +96,9 @@ class ChatSession:
         return ChatAnswer(result.text, tuple(self._references))
 
     def order_details(self):
-        """Fixed demo order; ownership stays inside the bound Python service."""
+        """Startup-selected order; ownership stays inside the bound service."""
         try:
-            return self._tools._orders.lookup_order(1)
+            return self._tools._orders.lookup_order(self._order_id)
         except Exception:
             return OrderLookupResult("error", None, "Order lookup could not be completed.")
 
@@ -76,4 +107,4 @@ class ChatSession:
         self._references.clear()
 
     def close(self):
-        self._tools.close()
+        self._data_context.__exit__(None, None, None)

@@ -145,7 +145,7 @@ class ConversationTests(unittest.TestCase):
         factory = Mock()
         env = {"LLM_PROVIDER": "gemini", "LLM_MODEL": "gemini-3.1-flash-lite",
                "GEMINI_API_KEY": "synthetic-key-not-real", "GEMINI_FREE_TIER_CONFIRMED": "1"}
-        with patch.dict("os.environ", env), patch("app.cli.Repository") as repository:
+        with patch.dict("os.environ", env), patch("app.data_session.Repository") as repository:
             code = main(["--data-mode", "local"], output_fn=Mock(), provider_factory=factory)
         self.assertEqual(code, 2)
         repository.assert_not_called()

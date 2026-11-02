@@ -26,7 +26,8 @@ TOOLS = [
             {"query": {"type": "string"}, "category_id": {"type": "integer"},
              "max_price_brl": {"type": "string", "description": "Decimal BRL amount, for example 1000.00"},
              "sort_by": {"type": "string", "enum": ["list_price", "effective_price"]},
-             "all_results": {"type": "boolean", "description": "Return every matching product when the customer requests all; otherwise a partial preview is returned."}}),
+             "all_results": {"type": "boolean", "description": "Return every matching product when the customer requests all; otherwise a partial preview is returned."},
+             "available_only": {"type": "boolean", "description": "Default true. Use false only when explicitly asked to include unavailable/inactive products."}}),
     _schema("get_product", "Get a product and recorded availability, with quality warnings.",
             {"product_id": {"type": "integer"}}, ("product_id",)),
     _schema("get_price_quote", "Get deterministic snapshot pricing; never stack PIX and promotions.",
@@ -61,6 +62,8 @@ class ToolRuntime:
         return copy.deepcopy(TOOLS)
 
     def prepare_arguments(self, name: str, arguments: dict, question: str) -> dict:
+        if isinstance(arguments, dict) and name == 'get_product' and requested_product_id(question) is not None:
+            return {**arguments, 'product_id': requested_product_id(question)}
         if isinstance(arguments, dict) and name == "get_price_quote":
             result = dict(arguments)
             if re.search(r"\bpix\b", question.casefold()):
@@ -83,6 +86,8 @@ class ToolRuntime:
             return "search_policies"
         if requested_product_id(question) is not None and re.search(r"price|cost|quote|preço|valor|pix", question.casefold()):
             return "get_price_quote"
+        if requested_product_id(question) is not None and re.search(r'stock|estoque|categor', question.casefold()):
+            return 'get_product'
         # An earlier catalog/price result is not evidence for a new policy topic.
         if re.search(r"\b(?:polic(?:y|ies)|politic\w*|warrant(?:y|ies)|garanti\w*|returns?|refunds?|"
                      r"devol\w*|reembols\w*|shipping|frete\w*|opening hours|horario\w*|complaints?|reclam\w*)\b", normalize(question)):
@@ -121,6 +126,18 @@ class ToolRuntime:
                 if name == "search_products" and result.get("status") == "ok":
                     return render_catalog(result["data"], self._catalog.repository.categories, english=english_question(question), synthetic=self.is_synthetic)
         for name, result in reversed(results):
+            if (name == 'get_product' and result.get('status') == 'ok'
+                    and re.search(r'stock|estoque|categor', question.casefold())):
+                product = result['data']
+                if english_question(question):
+                    availability = 'Available' if product['available'] else 'Unavailable'
+                    return (f"**{product['name']}**\n\nCategory: {product['category']}. "
+                            f"Recorded stock: {product['recorded_stock_quantity']} units. {availability}." +
+                            ('\n\nSome product details need confirmation.' if product['warnings'] else ''))
+                availability = 'Disponível' if product['available'] else 'Indisponível'
+                return (f"**{product['name']}**\n\nCategoria: {product['category']}. "
+                        f"Estoque registrado: {product['recorded_stock_quantity']} unidades. {availability}." +
+                        ('\n\nAlguns dados do produto precisam de confirmação.' if product['warnings'] else ''))
             if name == "get_price_quote" and result.get("status") == "ok":
                 data = result["data"]
                 return render_quote(data, self._catalog.get_product(data["product_id"]).name, english=english_question(question), synthetic=self.is_synthetic)
@@ -134,6 +151,7 @@ class ToolRuntime:
 
     def _product(self, product):
         return {"product_id": product.product_id, "name": product.name[:160],
+                "category": self._catalog.repository.categories[product.category_id].name,
                 "list_price_brl": str(product.price_brl), "status": product.status,
                 "available": product.available, "recorded_stock_quantity": product.stock_quantity,
                 "warnings": [w.code for w in self._catalog.repository.product_warnings(product.product_id)],
@@ -156,7 +174,8 @@ class ToolRuntime:
             if name == "search_products":
                 budget = arguments.get("max_price_brl")
                 products = self._catalog.search_products(arguments.get("query", ""),
-                    category_id=arguments.get("category_id"), max_price_brl=Decimal(budget) if budget is not None else None)
+                    category_id=arguments.get("category_id"), max_price_brl=Decimal(budget) if budget is not None else None,
+                    available_only=arguments.get('available_only', True))
                 effective = arguments.get("sort_by") == "effective_price"
                 quotes = {p.product_id: self._catalog.get_price_quote(p.product_id).final_price_brl for p in products} if effective else {}
                 if effective:
@@ -173,7 +192,8 @@ class ToolRuntime:
                         "all_results_requested": all_results, "source": "CSV snapshot; freshness unknown",
                         "filters": {"category_ids": sorted({arguments["category_id"]} if "category_id" in arguments
                                                            else self._catalog.category_ids_from_text(arguments.get("query", ""))),
-                                    "query": arguments.get("query", ""), "max_price_brl": budget, "available_only": True}}
+                                    "query": arguments.get("query", ""), "max_price_brl": budget,
+                                    "available_only": arguments.get('available_only', True)}}
             elif name == "get_product":
                 data = self._product(self._catalog.get_product(arguments["product_id"]))
             elif name == "get_price_quote":
@@ -213,7 +233,8 @@ class ToolRuntime:
                     if online_return:
                         data["online_return_assessment"] = assess_online_return(arguments["query"], rule)
             # Conversion is explicit; no repr/default=str fallback can expose raw objects.
-            encoded = json.dumps({"status": "ok", "data": data}, default=json_value, ensure_ascii=False, allow_nan=False)
+            encoded = json.dumps({"status": "ok", "data": data}, default=json_value, ensure_ascii=False, allow_nan=False,
+                                 separators=(',', ':'))
             if len(encoded) > 12000:
                 if name == "search_products" and len(data["products"]) > 5:
                     data["products"] = data["products"][:5]

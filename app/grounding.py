@@ -36,6 +36,10 @@ def catalog_arguments(question: str, arguments: dict, catalog) -> dict:
     qualifiers literally present in the request. This is not a general NL parser.
     """
     result = dict(arguments)
+    text = normalize(question)
+    include_unavailable = bool(re.search(r'\b(?:indisponiveis|inativos|unavailable|inactive)\b|sem estoque|out of stock', text))
+    # Availability scope, like budget/category, belongs to the current request.
+    result['available_only'] = not include_unavailable
     categories = catalog.category_ids_from_text(question)
     if len(categories) == 1:
         result["category_id"] = next(iter(categories))
@@ -56,7 +60,8 @@ def catalog_arguments(question: str, arguments: dict, catalog) -> dict:
             query = result.get("query", "")
             if isinstance(query, str):
                 result["query"] = " ".join(term for term in _normalize(query).split() if term in words and term not in {
-                    "all", "every", "available", "products", "instruments", "models", "todos", "todas", "disponiveis", "produtos", "instrumentos", "modelos", "sintetico", "sinteticos", "synthetic", "lista", "liste", "listar", "de", "do", "da", "os", "as", "uma", "um", "pf", "por", "favor", "mais", "barato", "baratos", "caro", "caros", "menor", "maior", "preco", "price", "cheapest", "sorted", "first", "lowest", "highest", "to", "the", "from"})
+                    "all", "every", "available", "products", "instruments", "models", "todos", "todas", "disponiveis", "produtos", "instrumentos", "modelos", "sintetico", "sinteticos", "synthetic", "lista", "liste", "listar", "de", "do", "da", "os", "as", "uma", "um", "pf", "por", "favor", "mais", "barato", "baratos", "caro", "caros", "menor", "maior", "preco", "price", "cheapest", "sorted", "first", "lowest", "highest", "to", "the", "from",
+                    "catalogo", "completo", "completa", "incluindo", "indisponiveis", "inativos", "unavailable", "inactive", "including", "full", "catalog", "sem", "estoque", "out", "of", "stock", "e", "and"})
     return result
 
 
@@ -77,17 +82,19 @@ def render_catalog(data: dict, categories, *, english: bool = False, synthetic: 
         return _render_english_catalog(data, categories, synthetic=synthetic)
     catalog = "catálogo de demonstração" if synthetic else "catálogo"
     qualifier = " até " + brl(budget) if budget is not None else ""
+    availability = " disponíveis" if filters.get('available_only', True) else ""
     if data.get("catalog_state") == "empty_dataset":
         return f"O {catalog} está vazio no momento; não há produtos para consultar."
     if not total:
-        return f"Não encontrei {label} disponíveis{qualifier} no {catalog}."
+        return f"Não encontrei {label}{availability}{qualifier} no {catalog}."
     if data["truncated"]:
         heading = f"Encontrei {total} opções de {label}{qualifier} no {catalog}. Aqui estão {returned} de {total}, do mais barato ao mais caro (lista parcial):"
     else:
-        heading = f"Encontrei {total} opções de {label} disponíveis{qualifier} no {catalog}. Esta é a lista completa, do mais barato ao mais caro:"
+        heading = f"Encontrei {total} opções de {label}{availability}{qualifier} no {catalog}. Esta é a lista completa, do mais barato ao mais caro:"
     lines = [heading, ""]
     for index, product in enumerate(products, 1):
-        lines.append(f"{index}. {product['name']} — {brl(product.get('effective_price_brl', product['list_price_brl']))}")
+        unavailable = ' · Indisponível' if not product['available'] else ''
+        lines.append(f"{index}. {product['name']} — {brl(product.get('effective_price_brl', product['list_price_brl']))}{unavailable}")
     lines.append("")
     if any(p["warnings"] for p in products):
         lines.append("Alguns modelos têm informações divergentes no cadastro; confirme esses detalhes com o atendimento.")
@@ -114,16 +121,17 @@ def _render_english_catalog(data: dict, categories, *, synthetic: bool = False) 
     budget = filters["max_price_brl"]
     qualifier = f" up to R$ {Decimal(budget):,.2f}" if budget is not None else ""
     catalog = "demonstration catalog" if synthetic else "catalog"
+    availability = 'available ' if filters.get('available_only', True) else ''
     if data.get("catalog_state") == "empty_dataset":
         return f"The {catalog} is empty at the moment; there are no products to browse."
     if not total:
-        return f"I couldn't find any available {label}{qualifier} in our {catalog}."
+        return f"I couldn't find any {availability}{label}{qualifier} in our {catalog}."
     if data["truncated"]:
         heading = f"I found {total} matching {label}{qualifier} in our {catalog}. Here are {len(products)} of {total}, lowest price first (partial list):"
     else:
-        heading = f"I found {total} available {label}{qualifier} in our {catalog}. Here's the complete list, lowest price first:"
+        heading = f"I found {total} {availability}{label}{qualifier} in our {catalog}. Here's the complete list, lowest price first:"
     lines = [heading, ""]
-    lines += [f"{i}. {p['name']} — R$ {Decimal(p.get('effective_price_brl', p['list_price_brl'])):,.2f}" for i, p in enumerate(products, 1)]
+    lines += [f"{i}. {p['name']} — R$ {Decimal(p.get('effective_price_brl', p['list_price_brl'])):,.2f}" + (' · Unavailable' if not p['available'] else '') for i, p in enumerate(products, 1)]
     lines.append("")
     if any(p["warnings"] for p in products):
         lines.append("Some product attributes conflict in the source; confirm those details with customer service.")

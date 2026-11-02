@@ -127,9 +127,10 @@ Portuguese actions use the same services: catalog/pricing/policy suggestions
 submit real agent questions; Meu pedido opens a read-only, authorized synthetic
 order view inside the card. Back preserves chat history. It supports arbitrary questions and multi-turn memory, readable catalog
 answers, policy section/page captions, loading/error states, and reset. Controls disable during inference. Only the
-packaged synthetic fixture is available in this interface; no uploads, private
-paths, cloud provider, or customer-identity selector. Customer 1 is fixed by the
-existing demo service, and order 2 remains inaccessible. Reset does not rebind it.
+DEMO fixture is used by default. LOCAL mode loads the original authorized CSVs and
+PDF through the same services as the CLI. There are no uploads, cloud provider,
+or customer-identity selector. DEMO fixes customer 1; LOCAL order access requires
+explicit trusted startup configuration. Reset never rebinds identity or data mode.
 
 Use Python 3.12 (tested) for Streamlit's binary dependencies; the CLI environment
 can remain unchanged. From the repository root in PowerShell:
@@ -190,6 +191,43 @@ private WebView storage; closing loses conversation/theme state. An abrupt OS or
 process crash is outside the normal-close cleanup guarantee. Dependencies and
 WebView2 must be installed separately; the launcher does not install them.
 See [desktop verification](docs/DESKTOP.md) for tests, boundaries, and limitations.
+
+### DEMO and LOCAL data modes
+
+Both modes use the exact same mini-chat and local Ollama. The active mode is
+labeled in the interface. Restart the application to change startup settings.
+See [mode configuration and verification](docs/DESKTOP_MODES.md) for details.
+
+For the public, private-file-independent demonstration, clear any previous local
+settings before launching:
+
+```powershell
+foreach ($setting in @('EMPORIO_DATA_DIR', 'EMPORIO_POLICY_PATH', 'EMPORIO_ENABLE_DEMO_IDENTITY', 'EMPORIO_DEMO_CUSTOMER_ID', 'EMPORIO_ORDER_ID')) {
+    Remove-Item "Env:$setting" -ErrorAction SilentlyContinue
+}
+$env:EMPORIO_DATA_MODE = "demo"
+$env:OLLAMA_MODEL = "qwen3:4b-instruct" # Use an installed local tools-capable model.
+.\.venv-desktop\Scripts\python.exe -m app.desktop
+```
+
+For the original files in `data/`, use LOCAL. This example binds a local
+demonstration identity outside chat; it is **not production authentication**.
+Customer/order IDs must match your authorized source records. To keep order access
+anonymous and denied, set `EMPORIO_ENABLE_DEMO_IDENTITY=0` and clear
+`EMPORIO_DEMO_CUSTOMER_ID` and `EMPORIO_ORDER_ID` before launching.
+
+```powershell
+$env:EMPORIO_DATA_MODE = "local"
+$env:EMPORIO_ENABLE_DEMO_IDENTITY = "1"
+$env:EMPORIO_DEMO_CUSTOMER_ID = Read-Host "Authorized local demo customer ID"
+$env:EMPORIO_ORDER_ID = Read-Host "Order ID belonging to that customer"
+$env:OLLAMA_MODEL = "qwen3:4b-instruct"
+.\.venv-desktop\Scripts\python.exe -m app.desktop
+```
+
+The supplied catalog contains 65 products, 61 recorded as available. Ask to include
+unavailable/inactive products for all 65; ordinary availability searches still
+exclude them. Prices and promotions retain the existing deterministic rules.
 
 If startup fails despite a working standalone pywebview window, do not assume a
 missing dependency. Enable local developer diagnostics in the same PowerShell

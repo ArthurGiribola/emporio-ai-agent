@@ -5,12 +5,10 @@ from contextlib import ExitStack
 from pathlib import Path
 
 from app.agent import Agent
-from app.orders import DemoSessionConfig, OrderService
-from app.policies import PolicyDataError, PolicyRetriever
+from app.data_session import open_tools
+from app.policies import PolicyDataError
 from app.providers import ConfigurationError, ProviderConfig, create_provider
-from app.repository import DataValidationError, Repository
-from app.synthetic import SyntheticTools
-from app.tool_runtime import ToolRuntime
+from app.repository import DataValidationError
 
 
 def main(argv=None, *, input_fn=input, output_fn=print, provider_factory=create_provider):
@@ -25,17 +23,12 @@ def main(argv=None, *, input_fn=input, output_fn=print, provider_factory=create_
         config = ProviderConfig.from_environment()
         if config.provider == "gemini" and args.data_mode != "synthetic":
             raise ConfigurationError("Gemini cannot use supplied store files; choose Ollama for local data")
-        if args.data_mode == "synthetic" and (args.enable_demo_identity or args.demo_customer_id is not None or args.policy_path is not None or args.data_dir != Path("data")):
-            raise ConfigurationError("Synthetic mode uses only approved fixtures and its fixed demo identity; custom data/identity options are not accepted")
         with ExitStack() as stack:
+            tools = stack.enter_context(open_tools(args.data_mode, data_dir=args.data_dir, policy_path=args.policy_path,
+                enable_demo_identity=args.enable_demo_identity, demo_customer_id=args.demo_customer_id))
             if args.data_mode == "synthetic":
-                tools = stack.enter_context(SyntheticTools())
                 output_fn("Synthetic data and policies; demo customer 1. Order 2 is not accessible.")
             else:
-                repository = Repository(args.data_dir)
-                policy = PolicyRetriever(args.policy_path or args.data_dir / "políticas_da_loja.pdf")
-                orders = OrderService(repository, DemoSessionConfig(args.enable_demo_identity, args.demo_customer_id))
-                tools = ToolRuntime(repository, policy, orders)
                 output_fn("Local snapshot data. Demo identity is not production authentication; it cannot change in chat.")
             agent = Agent(provider_factory(config), tools)
             output_fn("Enter arbitrary shop questions. /reset clears history; /quit exits. No transcript is saved.")

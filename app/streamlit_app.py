@@ -18,8 +18,8 @@ def show_answer(message):
     references = message.get("references", ())
     if references:
         # A single compact source note avoids one spaced block per section.
-        st.caption("Synthetic policy · " + "; ".join(
-            reference.removeprefix("Synthetic policy · ") for reference in references))
+        prefix = "Synthetic policy · " if references[0].startswith("Synthetic policy · ") else "Store policy · "
+        st.caption(prefix + "; ".join(reference.removeprefix(prefix) for reference in references))
 
 
 SUGGESTIONS = {
@@ -27,6 +27,13 @@ SUGGESTIONS = {
     "Preços": "Qual é o preço do produto sintético 1 pagando com PIX?",
     "Meu pedido": "Qual é o status e o total registrado do pedido sintético 1? Há rastreamento?",
     "Políticas": "Qual é a política sintética de devolução? Cite as seções e páginas disponíveis.",
+}
+
+LOCAL_SUGGESTIONS = {
+    "Ver produtos": "Liste o catálogo completo, incluindo produtos indisponíveis e inativos, do mais barato ao mais caro.",
+    "Preços": "Quais promoções estão disponíveis?",
+    "Meu pedido": "Qual é o status do meu pedido?",
+    "Políticas": "Qual é a política de devolução para compras online? Cite as seções e páginas disponíveis.",
 }
 
 
@@ -101,7 +108,7 @@ def show_order():
     if back.button("←", key="back_to_chat", help="Voltar à conversa"):
         st.session_state.view = "chat"
         st.rerun()
-    heading.markdown("**Meu pedido**")
+    heading.markdown(f"**Meu pedido** · {st.session_state.shop_session.mode}")
     with st.container(height=410, border=False, key="order_detail"):
         result = st.session_state.shop_session.order_details()
         if result.status == "error":
@@ -133,7 +140,8 @@ def show_order():
         else:
             tracking = '<div class="order-empty"><span class="order-icon" aria-hidden="true">◇</span><div><strong>Rastreamento ainda não informado</strong><div class="order-note" style="margin-top:3px">Código de rastreamento não informado no registro.</div></div></div>'
         st.markdown(f'<section class="order-card"><div class="order-label">Rastreamento</div>{tracking}</section>', unsafe_allow_html=True)
-        st.caption("Data efetiva de entrega não disponível. Consulta somente leitura a um registro sintético, sem atualização em tempo real.")
+        record = "registro sintético" if st.session_state.shop_session.mode == 'DEMO' else "registro da loja"
+        st.caption(f"Data efetiva de entrega não disponível. Consulta somente leitura a um {record}, sem atualização em tempo real.")
 
 
 
@@ -145,7 +153,7 @@ def main():
             st.session_state.shop_session = ChatSession()
             st.session_state.messages = []
         except Exception:
-            st.error("The local demo could not start. Check the Ollama model and loopback endpoint configuration, then reload this page.")
+            st.error("The local interface could not start. Check the selected data mode, authorized files, and Ollama settings, then restart.")
             st.stop()
     busy = bool(st.session_state.get("pending_question"))
     with st.container(key="mini_chat"):
@@ -174,7 +182,8 @@ def main():
                         show_answer(message)
         selected = None
         with st.container(key="actions"):
-            for column, (label, prompt) in zip(st.columns(4, gap="small"), SUGGESTIONS.items()):
+            suggestions = SUGGESTIONS if st.session_state.shop_session.mode == 'DEMO' else LOCAL_SUGGESTIONS
+            for column, (label, prompt) in zip(st.columns(4, gap="small"), suggestions.items()):
                 if column.button(label, use_container_width=True, disabled=busy):
                     if label == "Meu pedido":
                         st.session_state.view = "order"
@@ -185,7 +194,7 @@ def main():
             st.session_state.pending_question = submitted
             st.rerun()
         question = st.session_state.get("pending_question")
-        st.caption("Demo sintética · Ollama local · Cliente 1 fixo · Sem alterações em pedidos")
+        st.caption(st.session_state.shop_session.mode_caption)
         if question:
             st.session_state.messages.append({"role": "user", "text": question})
             with conversation:
