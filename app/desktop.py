@@ -6,6 +6,7 @@ import secrets
 import socket
 import sys
 import time
+import traceback
 from contextlib import contextmanager
 from pathlib import Path
 from urllib.error import URLError
@@ -33,8 +34,9 @@ def server_arguments(port, route):
 def run_server(port, route):
     # Spawned worker, never a shell/venv redirector or a separately owned server.
     with open(os.devnull, "w") as quiet:
-        os.dup2(quiet.fileno(), 1)
-        os.dup2(quiet.fileno(), 2)
+        if os.environ.get("EMPORIO_DESKTOP_DEBUG") != "1":
+            os.dup2(quiet.fileno(), 1)
+            os.dup2(quiet.fileno(), 2)
         from streamlit.web import cli
         sys.argv = server_arguments(port, route)
         cli.main()
@@ -110,7 +112,9 @@ def main():
     except KeyboardInterrupt:
         return 130
     except Exception:
-        print('Desktop startup failed. Install ".[desktop]" with Python 3.12 and ensure Microsoft Edge WebView2 Runtime is installed.')
+        if os.environ.get("EMPORIO_DESKTOP_DEBUG") == "1":
+            traceback.print_exc()
+        print('Desktop startup failed. Set EMPORIO_DESKTOP_DEBUG=1 and rerun for local developer diagnostics.')
         return 2
 
 

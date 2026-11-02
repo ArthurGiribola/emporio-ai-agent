@@ -191,6 +191,21 @@ process crash is outside the normal-close cleanup guarantee. Dependencies and
 WebView2 must be installed separately; the launcher does not install them.
 See [desktop verification](docs/DESKTOP.md) for tests, boundaries, and limitations.
 
+If startup fails despite a working standalone pywebview window, do not assume a
+missing dependency. Enable local developer diagnostics in the same PowerShell
+session and rerun using the environment where desktop dependencies are installed:
+
+```powershell
+$env:EMPORIO_DESKTOP_DEBUG = "1"
+.\.venv-desktop\Scripts\python.exe -m app.desktop
+# Restore quiet startup afterward:
+Remove-Item Env:EMPORIO_DESKTOP_DEBUG -ErrorAction SilentlyContinue
+```
+
+This prints the original launcher traceback and child Streamlit output to the
+local console only. It does not enable the WebView inspector or expose diagnostics
+inside the chat. Diagnostic text can include local paths; review it before sharing.
+
 ## Gemini synthetic conversation without paid credits
 
 Create/use a Gemini API key belonging to an active **Free Tier project without

@@ -84,3 +84,31 @@ remain local and no remote/push/submission was performed in this phase.
 
 Official references: [pywebview API](https://pywebview.flowrl.com/api/),
 [Windows web engine requirements](https://pywebview.flowrl.com/guide/web_engine).
+
+## Startup diagnostics verification (Python 3.12.15)
+
+The reported startup failure was investigated using the existing `.venv-desktop`
+environment: Python 3.12.15, Streamlit 1.66.1 and pywebview 6.2.1. No packages or
+Windows runtimes were reinstalled. The local module path and repository working
+directory were checked. Both normal startup and startup through Windows
+PowerShell 5.1.26100.9818 succeeded during verification. The PowerShell 5.1 run
+subsequently exited with code 0. Thus the reported terminal failure's underlying
+exception remains **unreproduced**; no backend/port/runtime cause is asserted.
+
+The confirmed diagnostic defect was the blanket exception handler: it always
+suggested missing dependencies while discarding the original exception. With
+`EMPORIO_DESKTOP_DEBUG=1`, the launcher now prints the actual traceback and keeps
+the spawned Streamlit output visible in the local console. Normal startup remains
+quiet, with a neutral diagnostic hint on failure. This flag does not enable the
+WebView inspector, change renderer/server behavior, record chat content, or expose
+diagnostics through the customer UI. Local paths can appear in developer output.
+The local environment directory is excluded from Git.
+
+All 11 launcher tests passed, including real child startup, loopback readiness,
+owned-worker cleanup and preservation of an unrelated occupied port. New mocked
+tests verify opt-in traceback visibility and preservation of child output; they
+do not claim to reproduce the user's original failure. Full suite in this
+environment: **172 tests in 13.221 seconds, 166 passed, 6 skipped**, no failures or
+errors. Skips were the six opt-in live provider/scope/correctness checks, not
+desktop lifecycle tests. A traceback from the original failing session is still
+needed before claiming a root-cause startup fix.

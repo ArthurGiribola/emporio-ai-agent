@@ -1,6 +1,8 @@
 """Launcher lifecycle tests. Mocked native-window calls are not real GUI runs."""
 
 import importlib.util
+import io
+import os
 import socket
 import unittest
 from urllib.parse import urlsplit
@@ -10,6 +12,36 @@ from app import desktop
 
 
 class DesktopTests(unittest.TestCase):
+    def test_startup_traceback_is_opt_in_and_does_not_blame_dependencies(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        for debug in ('0', '1'):
+            webview = Mock()
+            webview.screens = []
+            output, errors = io.StringIO(), io.StringIO()
+            with patch.object(desktop.sys, 'platform', 'win32'), \
+                    patch.dict('sys.modules', {'webview': webview}), \
+                    patch.dict(os.environ, {'EMPORIO_DESKTOP_DEBUG': debug}), \
+                    redirect_stdout(output), redirect_stderr(errors):
+                self.assertEqual(desktop.main(), 2)
+            self.assertIn('EMPORIO_DESKTOP_DEBUG=1', output.getvalue())
+            self.assertNotIn('Install', output.getvalue())
+            self.assertEqual('Traceback' in errors.getvalue(), debug == '1')
+            self.assertEqual('IndexError' in errors.getvalue(), debug == '1')
+            webview.create_window.assert_not_called()
+
+    def test_debug_preserves_child_server_output_only_when_requested(self):
+        from types import SimpleNamespace
+        for debug, redirects in [('0', 2), ('1', 0)]:
+            cli = Mock()
+            with patch.dict(os.environ, {'EMPORIO_DESKTOP_DEBUG': debug}), \
+                    patch.dict('sys.modules', {'streamlit.web': SimpleNamespace(cli=cli)}), \
+                    patch.object(desktop.os, 'dup2') as redirect, \
+                    patch.object(desktop.sys, 'argv', []):
+                desktop.run_server(12345, 'desktop-test')
+                self.assertEqual(redirect.call_count, redirects)
+                cli.main.assert_called_once_with()
+                self.assertIn('--server.address=127.0.0.1', desktop.sys.argv)
+
     def test_server_flags_are_local_and_headless(self):
         args = desktop.server_arguments(12345, "desktop-test")
         self.assertIn("--server.address=127.0.0.1", args)
