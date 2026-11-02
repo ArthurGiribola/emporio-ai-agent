@@ -71,6 +71,12 @@ def style(light):
     .catalog-meta {{color:{muted};font-size:11px;line-height:1.5;margin-top:4px;}}
     .catalog-stock {{margin-top:14px;font-size:13px;}}
     .st-key-catalog_controls [data-testid="stWidgetLabel"] p {{font-size:11px;}}
+    .stMainBlockContainer:has(.st-key-catalog_screen) {{padding-top:24px;}}
+    .st-key-mini_chat .st-key-catalog_rows button {{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid {border};border-radius:0;min-height:62px;padding:8px 0;}}
+    .st-key-catalog_rows button [data-testid="stMarkdownContainer"] {{width:100%;text-align:left;}}
+    .st-key-catalog_rows button p {{text-align:left;font-size:11px;line-height:1.5;}}
+    .st-key-catalog_rows button strong {{font-size:13px;font-weight:500;}}
+    .st-key-catalog_rows button:focus-visible {{outline:2px solid {muted};outline-offset:-2px;}}
     .order-summary {{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px;}}
     .order-summary h2 {{font-size:26px;letter-spacing:-.8px;margin:0;color:{text};padding:0;}}
     .order-label {{font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:{muted};font-weight:600;}}
@@ -183,6 +189,8 @@ def main():
                 st.session_state.view = 'chat'
                 st.session_state.catalog_view = None
                 st.session_state.catalog_category = 0
+                st.session_state.catalog_search = ''
+                st.session_state.catalog_filters = ('', 0)
                 reset_catalog_navigation()
         if st.session_state.get("view") == "order":
             show_order()
@@ -230,6 +238,8 @@ def main():
                         st.session_state.catalog_view = answer.catalog if answer.catalog.entries else None
                         st.session_state.catalog_token = st.session_state.get('catalog_token', 0) + 1
                         st.session_state.catalog_category = 0
+                        st.session_state.catalog_search = ''
+                        st.session_state.catalog_filters = ('', 0)
                         reset_catalog_navigation()
                         if answer.catalog.entries:
                             message['catalog_token'] = st.session_state.catalog_token

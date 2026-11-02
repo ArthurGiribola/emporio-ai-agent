@@ -2,12 +2,13 @@
 
 from dataclasses import dataclass
 from decimal import Decimal
+import unicodedata
 
 from app.repository import attribute_conflicts
 from app.services import PricingConflictError
 
 
-PAGE_SIZE = 10
+PAGE_SIZE = 4
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,8 @@ class CatalogEntry:
     available: bool
     stock_quantity: int | None
     issues: tuple[str, ...] = ()
+    promotion_percent: Decimal | None = None
+    base_price_brl: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -52,19 +55,27 @@ def build_catalog_view(service, data, *, synthetic=False):
     for position, row in enumerate(data['products'], 1):
         product = service.get_product(row['product_id'])
         issues = product_issues(product)
+        promotion_percent = None
         try:
-            price = service.get_price_quote(product.product_id).final_price_brl
+            quote = service.get_price_quote(product.product_id)
+            price = quote.final_price_brl
+            if quote.discount_kind == 'promotion':
+                promotion_percent = quote.discount_percent
         except PricingConflictError:
             price = None
             issues += ('Há promoções ativas concorrentes sem prioridade definida; preço não confirmado.',)
         entries.append(CatalogEntry(position, product.product_id, product.name, product.category_id,
             service.repository.categories[product.category_id].name, price, product.available,
-            product.stock_quantity, issues))
+            product.stock_quantity, issues, promotion_percent, product.price_brl))
     return CatalogView(tuple(entries), data['total_matches'], data['truncated'], synthetic)
 
 
-def catalog_page(view, category_id=0, page=0):
-    entries = tuple(e for e in view.entries if not category_id or e.category_id == category_id)
+def catalog_page(view, category_id=0, page=0, search=''):
+    def folded(text):
+        return ''.join(c for c in unicodedata.normalize('NFKD', text.casefold()) if not unicodedata.combining(c))
+    terms = folded(search).split()
+    entries = tuple(e for e in view.entries if (not category_id or e.category_id == category_id)
+                    and all(term in folded(e.name) for term in terms))
     pages = max(1, (len(entries) + PAGE_SIZE - 1) // PAGE_SIZE)
     page = max(0, min(page, pages - 1))
     return entries[page * PAGE_SIZE:(page + 1) * PAGE_SIZE], len(entries), page, pages

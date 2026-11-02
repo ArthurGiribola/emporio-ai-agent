@@ -229,11 +229,15 @@ The supplied catalog contains 65 products, 61 recorded as available. Ask to incl
 unavailable/inactive products for all 65; ordinary availability searches still
 exclude them. Prices and promotions retain the existing deterministic rules.
 
-Catalog answers open a compact internal view with ten products per page,
-previous/next navigation, category filtering and product selection for exact
+Catalog answers open a compact internal view with four products per page,
+previous/next navigation, name search and optional category filtering. Click a
+product row (or use keyboard focus and Enter) to open its details, including exact
 recorded stock. Names, categories, availability and effective prices come directly
 from the validated Python services, independently of generated Markdown. The back
-arrow returns to the conversation without clearing it. All 65 items remain
+action restores the catalog page and filters; the chat arrow returns to the
+conversation without clearing it. Product details show applicable promotion
+information and offer an action to ask the assistant about the selected item.
+All 65 items remain
 accessible when the query includes unavailable/inactive products. Filtering keeps
 the original list numbers. Ask about `item 63`
 or `produto 32` to refer to that position in the latest verified list; the agent
