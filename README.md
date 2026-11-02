@@ -18,7 +18,15 @@ An optional local Streamlit demonstration reuses the same agent; the CLI remains
   pages, retrieves related rules, and reports conflicts/insufficient evidence.
 - Order ownership is checked inside a read-only service bound at startup.
   Recorded historical totals are preserved; missing fields remain unknown.
-- Each user turn allows at most four model requests and six tool calls. Memory
+- Each non-greeting turn starts with one structured scope check using the same
+  configured LLM. Python requires a valid shop decision before business tools or
+  answers; unrelated requests receive a polite Portuguese/English redirect.
+  Uncertain/malformed decisions ask for clarification and are not stored in memory.
+  Only recent customer questions resolve genuine follow-ups; old tool evidence
+  cannot authorize an unrelated topic. Gemini projection still happens first.
+- After that check, each turn allows at most four business-model requests and six
+  business tool calls: five total model requests including scope. This preserves
+  the existing grounding-recovery budget at the cost of one extra round trip. Memory
   retains at most four complete exchanges, trims whole exchanges, and enforces
   character limits. `/reset` clears context without changing the bound identity.
 - Native tool-call responses and Gemini thought signatures are preserved. Tool
@@ -286,9 +294,34 @@ English documentation. Reported tests were actually executed; mocked responses
 are not presented as real LLM runs or customer transcripts.
 
 Original CSV/PDF resources, secrets, virtual environments, and build output are
-excluded from Git. No push/submission has been performed. The original challenge
-brief/email, deadline, redistribution permission, and GitHub-versus-PDF submission
-requirements still need confirmation before final delivery.
+excluded from Git. A GitHub remote exists and already contains earlier commits;
+local commits may be ahead of origin/main. Check actual Git state before delivery.
+
+The original three-page Artefact technical challenge has been reviewed locally.
+It requires a public GitHub repository link in reply to the recruiting email,
+an incremental history, README, and 3–5 interaction examples. The planning history
+also records an English PDF via Google Forms instruction. The original recruiting
+email is not available for independent verification: confirm that additional
+format and the exact deadline with the recruiter. Do not assume one channel
+replaces the other, or redistribute original resources without permission.
+
+## What I would improve with more development time
+
+- Broaden multilingual scope and policy evaluations across model versions and
+  ambiguous/mixed requests, measuring false refusals, factual errors, and latency.
+  Scope decisions are model-based, not a proof against every prompt injection;
+  uncertain decisions deliberately prefer clarification over a general answer.
+- Replace demo identity binding with verified production authentication and add
+  authorized live inventory/order adapters before claiming real-time information.
+- Improve local startup diagnostics for unavailable Ollama, missing models, and
+  incomplete responses; validate supported Python/WebView2 combinations. The
+  current launcher remains a local demonstration, with no paid-provider fallback.
+
+Scope regression tests distinguish mocked classifier/business contracts from
+opt-in real Ollama execution. Existing business tests stub the scope decision to
+isolate their original assertions; dedicated scope tests exercise the actual
+approval gate and fail-closed paths. See [scope verification](docs/SCOPE_FIX.md).
+Restart an already-open CLI/Streamlit/desktop process to load updated code.
 
 ## Correctness regression checks
 
