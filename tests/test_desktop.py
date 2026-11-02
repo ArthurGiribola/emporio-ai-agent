@@ -29,16 +29,19 @@ class DesktopTests(unittest.TestCase):
             self.assertEqual('IndexError' in errors.getvalue(), debug == '1')
             webview.create_window.assert_not_called()
 
-    def test_debug_preserves_child_server_output_only_when_requested(self):
+    def test_non_debug_redirects_python_streams_without_replacing_os_handles(self):
         from types import SimpleNamespace
-        for debug, redirects in [('0', 2), ('1', 0)]:
+        from contextlib import redirect_stderr, redirect_stdout
+        for debug in ('0', '1'):
             cli = Mock()
+            output, errors = io.StringIO(), io.StringIO()
             with patch.dict(os.environ, {'EMPORIO_DESKTOP_DEBUG': debug}), \
                     patch.dict('sys.modules', {'streamlit.web': SimpleNamespace(cli=cli)}), \
                     patch.object(desktop.os, 'dup2') as redirect, \
-                    patch.object(desktop.sys, 'argv', []):
+                    patch.object(desktop.sys, 'argv', []), \
+                    redirect_stdout(output), redirect_stderr(errors):
                 desktop.run_server(12345, 'desktop-test')
-                self.assertEqual(redirect.call_count, redirects)
+                redirect.assert_not_called()
                 cli.main.assert_called_once_with()
                 self.assertIn('--server.address=127.0.0.1', desktop.sys.argv)
 

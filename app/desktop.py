@@ -7,7 +7,7 @@ import socket
 import sys
 import time
 import traceback
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import ProxyHandler, build_opener
@@ -32,14 +32,17 @@ def server_arguments(port, route):
 
 
 def run_server(port, route):
-    # Spawned worker, never a shell/venv redirector or a separately owned server.
-    with open(os.devnull, "w") as quiet:
-        if os.environ.get("EMPORIO_DESKTOP_DEBUG") != "1":
-            os.dup2(quiet.fileno(), 1)
-            os.dup2(quiet.fileno(), 2)
-        from streamlit.web import cli
-        sys.argv = server_arguments(port, route)
+    # Keep Python's streams valid under Windows spawn. Replacing OS handles with
+    # dup2(devnull) breaks Streamlit's child startup/health logs on some consoles.
+    # Redirect Python writes only; opt-in debug keeps the original streams.
+    from streamlit.web import cli
+    sys.argv = server_arguments(port, route)
+    if os.environ.get("EMPORIO_DESKTOP_DEBUG") == "1":
         cli.main()
+    else:
+        with open(os.devnull, "w", encoding="utf-8") as quiet:
+            with redirect_stdout(quiet), redirect_stderr(quiet):
+                cli.main()
 
 
 def wait_until_ready(process, url, timeout=20):
