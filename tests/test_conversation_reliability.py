@@ -227,6 +227,17 @@ class ReliabilityTests(unittest.TestCase):
         explicit=self.tools.prepare_arguments('get_price_quote',{'product_id':3},'E no PIX para o produto ID 3?')
         self.assertEqual(self.tools.execute('get_price_quote',explicit)['data']['final_price_brl'],'237.50')
 
+    def test_scope_receives_verified_products_after_intervening_topics(self):
+        agent,_=self.agent([call('get_product',product_id=1),text()])
+        agent._recent_product_ids=(1,3)
+        agent._last_product_ids=(3,)
+        with patch('app.agent.assess_scope',return_value=('shop','pt')) as scope:
+            result=agent.run('Qual era o outro produto?')
+        self.assertEqual(result.status,'answered')
+        context=scope.call_args.kwargs['previous_answers'][-1]
+        for product_id in (1,3):
+            self.assertIn(self.tools._catalog.get_product(product_id).name,context)
+
     def test_chat_order_lists_the_same_recorded_products_and_quantities_as_order_view(self):
         agent,_=self.agent([call('lookup_order',order_id=1),text('Invented shipment')])
         result=agent.run('Quais são os produtos do meu pedido?')

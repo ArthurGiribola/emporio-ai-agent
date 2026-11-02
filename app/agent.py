@@ -191,6 +191,9 @@ class Agent:
             previous_answers = [assistant_text(m) for exchange in self._turns for m in exchange if m['role'] == 'assistant']
             if self._last_failure:
                 previous_answers.append(failure_message(self._last_failure, language == 'en'))
+            if self._recent_product_ids:
+                names = '; '.join(self._tools._catalog.get_product(i).name for i in self._recent_product_ids)
+                previous_answers.append('Verified instruments discussed or selected in this session: ' + names)
             decision, language = assess_scope(self._provider, question, previous_questions, self._emit,
                                              previous_answers=previous_answers)
             # A narrow conversation-management request is about this service,
