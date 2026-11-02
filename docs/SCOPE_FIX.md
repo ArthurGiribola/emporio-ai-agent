@@ -77,6 +77,35 @@ $env:OLLAMA_MODEL = "qwen3:4b-instruct"
 python -m unittest discover -s tests -v
 ```
 
+## Three-interface live verification
+
+Additional verification on Windows used runtime revision `00d9058`, Python
+3.12.14, actual local `qwen3:4b-instruct`, and synthetic data only. These were
+real model executions, separate from mocked unit tests:
+
+| Interface | Actual sequence and result |
+| --- | --- |
+| CLI | Full available catalog; English geography redirect; Portuguese programming redirect; successful PIX follow-up at 90.09; normal exit. |
+| Streamlit browser | Full available catalog; English geography redirect; Portuguese programming redirect; successful PIX follow-up at 90.09. |
+| Windows pywebview mini-chat | Full available catalog; English geography redirect; Portuguese programming redirect; successful PIX follow-up at 90.09. |
+
+The native window was freshly started with `python -m app.desktop`; an older
+already-open window was left untouched. Its actual captured window was 546 by
+713 pixels on this screen, with maximize disabled and no browser address bar.
+The compact chat remained vertically scrollable without horizontal overflow.
+Both light and dark themes rendered successfully. The existing order view showed
+synthetic order #1, recorded status Confirmado, one Nylon product, historical
+total R$99.00, and explicit missing tracking/delivery information. Returning with
+the back button preserved all messages, including both scope redirects and the
+valid pricing recovery. Dark theme was restored afterward. No interface source
+or styling changes were needed.
+
+The complete suite was rerun after these checks: **162 tests in 68.920 seconds,
+161 passed, 1 skipped**, no failures/errors. The only skip was Gemini's missing
+credentials/free-tier confirmation. All five opt-in real Ollama test methods
+passed. Native screenshots and raw CLI/UI observations were saved as local
+verification artifacts outside the repository, not as fabricated transcripts.
+
 ## Limits and submission status
 
 Scope is a bounded model decision, not a formal proof against every ambiguous
