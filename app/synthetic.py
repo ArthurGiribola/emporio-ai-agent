@@ -63,6 +63,8 @@ class SyntheticTools(ToolRuntime):
     This is an application boundary, not a sandbox against hostile Python code.
     """
 
+    is_synthetic = True
+
     def __init__(self):
         self._temporary = TemporaryDirectory(prefix="emporio-synthetic-")
         try:

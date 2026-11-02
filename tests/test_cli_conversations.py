@@ -50,7 +50,7 @@ class ConversationTests(unittest.TestCase):
         history = provider.complete.call_args.args[0]
         self.assertEqual(history[0]["content"], "Please check the nylon instrument's PIX price")
         self.assertTrue(any(m["role"] == "tool" for m in history))
-        self.assertEqual([m["content"] for m in history if m["role"] == "user"][-1], "Does that include the other discount?")
+        self.assertEqual([m["content"] for m in history if m["role"] == "user"][-1], "Does that include the other discount?\n\nPlease respond in English.")
 
     def test_reset_and_separate_agents_do_not_rebind_identity_or_share_history(self):
         provider = Mock(external=False)
@@ -59,7 +59,7 @@ class ConversationTests(unittest.TestCase):
         agent.run("Synthetic first")
         agent.reset()
         self.assertEqual(agent.run("Synthetic after reset").status, "unverified")
-        self.assertEqual(provider.complete.call_args.args[0], [{"role": "user", "content": "Synthetic after reset"}])
+        self.assertEqual(provider.complete.call_args.args[0], [{"role": "user", "content": "Synthetic after reset\n\nPlease respond in English."}])
         self.assertEqual(self.tools.execute("lookup_order", {"order_id": 1})["data"]["status"], "available")
         self.assertEqual(self.tools.execute("lookup_order", {"order_id": 2})["data"]["status"], "unavailable")
         second = Agent(Mock(external=False, complete=Mock(return_value=answer("No evidence"))), self.tools)
@@ -137,7 +137,7 @@ class ConversationTests(unittest.TestCase):
                             input_fn=Mock(side_effect=["I need help with my existing order", "/quit"]), output_fn=output.append,
                             provider_factory=lambda config: provider)
             self.assertEqual(code, 0)
-            result = provider.complete.call_args.args[0][-2]["result"]
+            result = next(m['result'] for m in reversed(provider.complete.call_args.args[0]) if m['role'] == 'tool')
             self.assertEqual(result["data"]["status"], "available")
             self.assertEqual(result["data"]["order"]["total_brl"], "99.00")
 

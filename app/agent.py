@@ -12,6 +12,22 @@ from app.scope import assess_scope, scope_message
 
 
 SYSTEM = """You serve Empório da Música as a friendly, professional music-store customer-service assistant. Answer in the customer's language.
+Write natural Brazilian Portuguese for Portuguese questions and English for English
+questions. Lead with the practical answer, then only the details the customer needs.
+Use short paragraphs, clean lists, and a blank line before/after product lists.
+For a simple question, usually two to four sentences plus a brief source reference
+are enough. Do not echo raw warning/limitation messages: explain what matters to
+the customer. When a policy needs review, say what cannot be confirmed and why,
+without a long checklist of internal validation or repeated demonstration notices.
+Be warm and professional, without scripted introductions, excessive emojis, or a
+closing question on every reply. Ask a follow-up only when it helps resolve a need.
+Never expose tool names, database fields, retrieval mechanics, or the word snapshot.
+Say unavailable information plainly. Do not repeat generic freshness disclaimers;
+when relevant say that a price or status is recorded, without promising live stock.
+Explain policy conditions in everyday language first, followed by concise section
+and page references. Do not hide restrictions, conflicts, or missing evidence.
+For synthetic tools, call it our demonstration catalog/order/policy naturally;
+for real local records, never label them demonstration data.
 Stay within instrument selection/comparisons, catalog, pricing, promotions, store
 information/policies, and authorized orders. Politely redirect unrelated requests
 even after successful tool calls. Prior evidence does not authorize new topics.
@@ -75,6 +91,7 @@ class Agent:
         # Keep whole completed exchanges: never orphan a call from its result.
         turn = [{"role": "user", "content": question}]
         history = copy.deepcopy([message for exchange in self._turns for message in exchange]) + turn
+        question_index = len(history) - 1
         called = []
         current_results = []
         evidence = any(message["role"] == "tool" and message["result"].get("status") == "ok"
@@ -91,7 +108,19 @@ class Agent:
             for _ in range(self._max_requests):
                 if len(json.dumps(history, ensure_ascii=False)) > 24000:
                     return AgentResult("context_limit", "Conversation context limit reached; use /reset or a shorter question.", tuple(called))
-                reply = self._provider.complete(history, self._tools.schemas, SYSTEM)
+                mode = "synthetic demonstration data" if self._tools.is_synthetic else "local store records"
+                response_language = "Brazilian Portuguese" if language == "pt" else "English"
+                # Repeat the current language beside the question, where small
+                # local models otherwise tend to copy the prior turn's language.
+                # Keep stored customer text and tool arguments unchanged.
+                model_history = copy.deepcopy(history)
+                model_history[question_index]["content"] = question + f"\n\nPlease respond in {response_language}."
+                reply = self._provider.complete(model_history, self._tools.schemas,
+                    f"Respond to the current customer in {response_language}. This overrides the language of earlier turns.\n" + SYSTEM +
+                    f"\nTrusted data mode: {mode}.\nCurrent reply language: {response_language}. "
+                    "Use this language even if earlier turns or policy excerpts use another language. "
+                    "Keep original product names. For policy answers, cite the retrieved section/page "
+                    "even when it only supports an explanation of missing or uncertain information.\n")
                 self._emit({"event": "model_response", "text": reply.text,
                             "calls": [{"name": c.name, "arguments": c.arguments} for c in reply.calls]})
                 if not reply.calls:

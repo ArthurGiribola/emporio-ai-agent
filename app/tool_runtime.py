@@ -8,7 +8,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from app.orders import OrderService
-from app.policies import PolicyRetriever
+from app.policies import PolicyRetriever, normalize
 from app.repository import Repository
 from app.services import CatalogService, PricingConflictError
 from app.grounding import (catalog_arguments, catalog_question, requested_budget, render_catalog, wants_all,
@@ -50,6 +50,8 @@ def json_value(value):
 class ToolRuntime:
     """Local-data runtime by default. Identity/configuration are never tool args."""
 
+    is_synthetic = False
+
     def __init__(self, repository: Repository, policies: PolicyRetriever, orders: OrderService):
         self._catalog = CatalogService(repository)
         self._policies, self._orders = policies, orders
@@ -81,6 +83,10 @@ class ToolRuntime:
             return "search_policies"
         if requested_product_id(question) is not None and re.search(r"price|cost|quote|preço|valor|pix", question.casefold()):
             return "get_price_quote"
+        # An earlier catalog/price result is not evidence for a new policy topic.
+        if re.search(r"\b(?:polic(?:y|ies)|politic\w*|warrant(?:y|ies)|garanti\w*|returns?|refunds?|"
+                     r"devol\w*|reembols\w*|shipping|frete\w*|opening hours|horario\w*|complaints?|reclam\w*)\b", normalize(question)):
+            return "search_policies"
         if catalog_question(question) and (wants_all(question) or requested_budget(question) is not None
                                            or self._catalog.category_ids_from_text(question)):
             return "search_products"
@@ -91,23 +97,39 @@ class ToolRuntime:
             for name, result in reversed(results):
                 if name == "search_policies" and result.get("status") == "ok":
                     return render_online_return(question, result["data"])
+        for name, result in reversed(results):
+            if name == "search_policies" and result.get("status") == "ok":
+                data = result["data"]
+                sections = data.get("sections", [])
+                # Approved demo placeholders contain no terms to paraphrase.
+                # Do not turn absent evidence into a confident negative policy.
+                if self.is_synthetic and sections and all(
+                        s["text"] == "Synthetic reference only; demo operator review required." for s in sections):
+                    references = "; ".join(f"{s['section']} (p. {', '.join(map(str, s['pages']))})" for s in sections)
+                    if english_question(question):
+                        return ("The demonstration policy doesn't specify these conditions, so I can't confirm them. "
+                                "Customer service would need to clarify them before you rely on an answer.\n\n"
+                                f"Sources: sections {references}.")
+                    return ("A política de demonstração não detalha essas condições, então não consigo confirmá-las. "
+                            "O atendimento precisa esclarecê-las antes de orientar você com segurança.\n\n"
+                            f"Fontes: seções {references}.")
         if catalog_question(question):
             if any(name == "search_products" and result.get("status") == "error" for name, result in results):
                 return ("The catalog lookup failed; availability could not be verified." if english_question(question) else
                         "A consulta ao catálogo falhou; não foi possível verificar a disponibilidade.")
             for name, result in reversed(results):
                 if name == "search_products" and result.get("status") == "ok":
-                    return render_catalog(result["data"], self._catalog.repository.categories, english=english_question(question))
+                    return render_catalog(result["data"], self._catalog.repository.categories, english=english_question(question), synthetic=self.is_synthetic)
         for name, result in reversed(results):
             if name == "get_price_quote" and result.get("status") == "ok":
                 data = result["data"]
-                return render_quote(data, self._catalog.get_product(data["product_id"]).name, english=english_question(question))
+                return render_quote(data, self._catalog.get_product(data["product_id"]).name, english=english_question(question), synthetic=self.is_synthetic)
             if name == "lookup_order" and result.get("status") == "ok":
-                return render_order(result["data"], english=english_question(question))
+                return render_order(result["data"], english=english_question(question), synthetic=self.is_synthetic)
         if not results and order_record_followup(question):
             for name, result in reversed(prior_results):
                 if name == "lookup_order" and result.get("status") == "ok":
-                    return render_order(result["data"], english=english_question(question))
+                    return render_order(result["data"], english=english_question(question), synthetic=self.is_synthetic)
         return model_text
 
     def _product(self, product):

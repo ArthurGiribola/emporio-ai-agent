@@ -99,7 +99,7 @@ class StreamlitPageTests(unittest.TestCase):
             app.run()
             app.chat_input[0].set_value("List all available products, cheapest first").run()
             self.assertFalse(app.exception)
-            self.assertIn("Complete list of 2", app.chat_message[2].markdown[0].value)
+            self.assertIn("2 available instruments", app.chat_message[2].markdown[0].value)
             app.chat_input[0].set_value("What is the PIX price for product 1?").run()
             self.assertIn("90.09", app.chat_message[-1].markdown[0].value)
             self.assertIn(r"R\$ 90.09", app.chat_message[-1].markdown[0].value)

@@ -77,7 +77,7 @@ def render_online_return(question: str, data: dict) -> str:
     window = rule.get("request_window_days")
     elapsed = assessment["elapsed_days"]
     if window is None:
-        return "Não consigo confirmar o prazo de arrependimento com a evidência disponível. É necessário confirmar a política com o atendimento; não há aprovação de devolução ou reembolso nesta resposta."
+        return "Não consigo confirmar o prazo de devolução com as informações disponíveis. O atendimento precisa esclarecer a política antes de avaliar a devolução ou o reembolso."
     if assessment["within_window"] is True:
         opening = (f"Sim — quanto ao prazo, {elapsed} dias após o recebimento estão dentro dos {window} dias corridos "
                    "previstos para solicitar a devolução de uma compra online.")
@@ -87,7 +87,7 @@ def render_online_return(question: str, data: dict) -> str:
     else:
         opening = (f"A regra para compras online prevê solicitar a devolução em até {window} dias corridos após o recebimento. "
                    "Preciso confirmar o canal da compra e quantos dias corridos se passaram desde o recebimento para avaliar esse prazo.")
-    lines = [opening, "", "A comparação do prazo não confirma automaticamente a elegibilidade: as condições da política precisam ser verificadas."]
+    lines = [opening, "", "A devolução ainda depende das condições abaixo; estar no prazo não significa que ela já foi aprovada."]
     if rule.get("conditions_statement"):
         lines.append(rule["conditions_statement"])
     else:
@@ -95,12 +95,12 @@ def render_online_return(question: str, data: dict) -> str:
     if rule.get("refund_statement"):
         lines.append(rule["refund_statement"])
     else:
-        lines.append("A evidência disponível não confirma as condições de reembolso; consulte o atendimento.")
+        lines.append("Não há informações suficientes para confirmar as condições de reembolso; o atendimento precisa esclarecê-las.")
     if rule.get("shipping_statement"):
         lines.append(rule["shipping_statement"])
     if any(issue["code"] == "return_exception_scope" for issue in data.get("issues", [])):
         lines.append("Casos especiais e exclusões precisam ser avaliados pelo atendimento; esta resposta não aprova a devolução.")
     pages = ", ".join(str(p) for p in rule["pages"])
     page_label = "página" if len(rule["pages"]) == 1 else "páginas"
-    lines.append(f"Fonte: seção {rule['section']}, {page_label} {pages}. Para solicitar a devolução, entre em contato com o atendimento.")
+    lines += ["", "Para solicitar a devolução, entre em contato com o atendimento.", "", f"Fonte: seção {rule['section']}, {page_label} {pages}."]
     return "\n".join(lines)

@@ -22,7 +22,8 @@ class EnglishEvaluationTests(unittest.TestCase):
         events = []
         result = Agent(provider, self.tools, observer=events.append).run("Please list all available products, sorted from the lowest to the highest price.")
         self.assertEqual(result.status, "answered")
-        self.assertTrue(result.text.startswith("Complete list of 2"))
+        self.assertIn("2 available instruments", result.text)
+        self.assertIn("complete list", result.text)
         self.assertNotIn("Não encontrei", result.text)
         self.assertNotIn("list_price_brl", result.text)
         event = next(e for e in events if e["event"] == "tool_result")

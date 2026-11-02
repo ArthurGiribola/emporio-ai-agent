@@ -15,8 +15,11 @@ def show_answer(message):
     else:
         # BRL dollar signs are currency, not Markdown/LaTeX math delimiters.
         st.markdown(re.sub(r"(?<!\\)\$", r"\\$", message["text"]), unsafe_allow_html=False)
-    for reference in message.get("references", ()):
-        st.caption(reference)
+    references = message.get("references", ())
+    if references:
+        # A single compact source note avoids one spaced block per section.
+        st.caption("Synthetic policy · " + "; ".join(
+            reference.removeprefix("Synthetic policy · ") for reference in references))
 
 
 SUGGESTIONS = {

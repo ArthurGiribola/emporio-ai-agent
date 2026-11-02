@@ -135,4 +135,4 @@ class AgentIntegrationTests(unittest.TestCase):
         agent = Agent(provider, self.tools)
         agent.run("Synthetic first")
         agent.run("Synthetic second")
-        self.assertEqual(provider.complete.call_args.args[0], [{"role": "user", "content": "Synthetic second"}])
+        self.assertEqual(provider.complete.call_args.args[0], [{"role": "user", "content": "Synthetic second\n\nPlease respond in English."}])
