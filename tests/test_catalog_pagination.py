@@ -172,6 +172,24 @@ class CatalogPageUITests(unittest.TestCase):
         self.assertIn('No matching products.', self.app.chat_message[-1].markdown[0].value)
         self.assertFalse(self.app.exception)
 
+    def test_full_visible_transcript_survives_all_internal_navigation(self):
+        self.agent.return_value = AgentResult('answered', 'Resposta verificada.')
+        for n in range(10):
+            self.app.chat_input[0].set_value(f'Pergunta da loja {n}').run()
+        original = list(self.app.session_state.messages)
+        self.assertEqual(len(original), 20)
+        self.agent.return_value = AgentResult('answered', '', catalog=self.view)
+        self.open_catalog()
+        self.app.button(key='catalog_product_1001').click().run()
+        self.app.button(key='catalog_detail_back').click().run()
+        self.app.button(key='catalog_back').click().run()
+        next(b for b in self.app.button if b.label == 'Meu pedido').click().run()
+        self.app.button(key='back_to_chat').click().run()
+        self.assertEqual(self.app.session_state.messages[:20], original)
+        self.assertEqual(len(self.app.chat_message), 23)  # Greeting + 11 complete turns.
+        self.assertIn('Pergunta da loja 0', self.app.chat_message[1].text[0].value)
+        self.assertFalse(self.app.exception)
+
     def test_ask_action_uses_record_identity_and_retains_browser_context(self):
         self.open_catalog()
         self.app.selectbox(key='catalog_category').set_value(2).run()

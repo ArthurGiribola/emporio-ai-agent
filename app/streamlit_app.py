@@ -247,7 +247,8 @@ def main():
                             message['catalog_token'] = st.session_state.catalog_token
                     show_answer(message)
             st.session_state.messages.append(message)
-            st.session_state.messages = st.session_state.messages[-8:]
+            # Visible session transcript is independent of bounded model memory.
+            # Only the explicit reset action may clear these messages.
             st.session_state.pending_question = None
             if answer.catalog is not None and answer.catalog.entries:
                 st.session_state.view = 'catalog'
