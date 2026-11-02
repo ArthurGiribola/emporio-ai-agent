@@ -229,6 +229,19 @@ The supplied catalog contains 65 products, 61 recorded as available. Ask to incl
 unavailable/inactive products for all 65; ordinary availability searches still
 exclude them. Prices and promotions retain the existing deterministic rules.
 
+Catalog answers open a compact internal view with ten products per page,
+previous/next navigation, category filtering and product selection for exact
+recorded stock. Names, categories, availability and effective prices come directly
+from the validated Python services, independently of generated Markdown. The back
+arrow returns to the conversation without clearing it. All 65 items remain
+accessible when the query includes unavailable/inactive products. Filtering keeps
+the original list numbers. Ask about `item 63`
+or `produto 32` to refer to that position in the latest verified list; the agent
+resolves the internal product ID itself. A new list replaces those references,
+and reset clears them. Ambiguous or out-of-range positions ask for clarification.
+Use a product name when unsure; explicit `produto ID 81` retains ID-based lookup
+for technical testing. Order numbers are not interpreted as catalog positions.
+
 If startup fails despite a working standalone pywebview window, do not assume a
 missing dependency. Enable local developer diagnostics in the same PowerShell
 session and rerun using the environment where desktop dependencies are installed:
