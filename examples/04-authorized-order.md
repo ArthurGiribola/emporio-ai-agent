@@ -1,42 +1,59 @@
-# Authorized order with missing delivery information
+# Authorized order and unauthorized request
 
-Actual local Ollama execution; scripted synthetic questions, not a simulated test.
-
-- Model: `qwen3:4b-instruct`
-- Runtime commit: `94f672b45ffa7144c04952caeb8e5e2ab8014f05`
-- Captured (UTC): 2026-11-01T18:55:30.640512+00:00
-- Source: approved public synthetic fixtures; no private files.
-
-Product names are source labels and are not translated. Answers below are unedited.
+Actual local Ollama conversation using `qwen3:4b-instruct` and the public synthetic DEMO fixtures.
+Runtime commit: `88a4856b23f8387b062b8e7f6a4752c0976acc5a`. Captured UTC: `2026-11-03T20:25:26+00:00`.
+Customer questions and assistant answers below are preserved verbatim. These transcripts include observed failures.
 
 ## Turn 1
 
-**Customer:** What are the recorded status and total for order 1? Please do not infer missing delivery information.
+**Customer:** Qual o status do meu pedido?
 
 **Assistant:**
 
-Order 1 is recorded as confirmed, with a recorded total of R$ 99.00.
-Tracking code: not recorded.
-Estimated delivery date: not recorded.
-Actual delivery date: not recorded.
-The recorded total differs from a calculation using current catalog prices; the historical total above is preserved.
-Historical unit prices are unavailable. This is a snapshot, not a live shipment update; no action was taken.
+> O pedido de demonstração #1 está registrado como **confirmado**, com total de **R$ 99,00**.
+>
+> Produtos registrados:
+> - 1× Violão Sintético Nylon
+>
+> - Código de rastreamento: não informado.
+> - Previsão de entrega: não informada.
+> - Data efetiva de entrega: não informada.
+>
+> O total original do pedido foi mantido, mesmo que os preços atuais do catálogo sejam diferentes.
+> O preço pago por cada item não está informado.
+>
+> Essas são as informações registradas do pedido; não fiz nenhuma alteração nele.
 
-Execution: `answered`; answer origin: `application_guard_after_live_inference`.
-Tools: `lookup_order`.
+_Tools: lookup_order. Runner error flag: false. Duration: 3.11 s; model calls: 3._
 
 ## Turn 2
 
-**Customer:** Is there a tracking code or an actual delivery date in the supplied record?
+**Customer:** Tem código de rastreamento?
 
 **Assistant:**
 
-Order 1 is recorded as confirmed, with a recorded total of R$ 99.00.
-Tracking code: not recorded.
-Estimated delivery date: not recorded.
-Actual delivery date: not recorded.
-The recorded total differs from a calculation using current catalog prices; the historical total above is preserved.
-Historical unit prices are unavailable. This is a snapshot, not a live shipment update; no action was taken.
+> O pedido de demonstração #1 está registrado como **confirmado**, com total de **R$ 99,00**.
+>
+> Produtos registrados:
+> - 1× Violão Sintético Nylon
+>
+> - Código de rastreamento: não informado.
+> - Previsão de entrega: não informada.
+> - Data efetiva de entrega: não informada.
+>
+> O total original do pedido foi mantido, mesmo que os preços atuais do catálogo sejam diferentes.
+> O preço pago por cada item não está informado.
+>
+> Essas são as informações registradas do pedido; não fiz nenhuma alteração nele.
 
-Execution: `answered`; answer origin: `application_guard_after_live_inference`.
-Tools: none; prior session evidence or refusal.
+_Tools: none. Runner error flag: false. Duration: 0.54 s; model calls: 1._
+
+## Turn 3
+
+**Customer:** E o pedido 2?
+
+**Assistant:**
+
+> As informações do pedido não estão disponíveis para esta sessão.
+
+_Tools: none. Runner error flag: false. Duration: 0.0 s; model calls: 0._

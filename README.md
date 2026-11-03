@@ -410,16 +410,30 @@ $env:EMPORIO_RUN_LIVE = "1"
 Gemini requires its local key and free-tier confirmation. Ollama requires a
 running server and qwen3:4b (or OLLAMA_MODEL for this two-provider smoke suite).
 Missing credentials/server produce explicit skips, not invented success. Real local
-qwen3:4b-instruct catalog and return regressions have passed. Five actual English
-synthetic conversations, with tool traces and answer-origin labels, are in
-[examples](examples/README.md). Application guards render critical catalog, quote,
-order, and return-timing answers after tool execution; those are distinguished
-from model-written prose. The policy follow-up still exposes internal evidence
-labels, an acknowledged presentation limitation. Gemini live execution is not
-claimed. See [final evaluation](docs/FINAL_EVALUATION.md) for executed results,
-public-only installation checks, and audit limits, and
+qwen3:4b-instruct catalog and return regressions have passed. The five current
+actual Portuguese synthetic conversations, including their failures, tool traces,
+and timings, are documented in [examples](examples/README.md). An earlier English
+sample is retained there as historical evidence. Application guards render
+critical catalog, quote, order, and return-timing answers after tool execution;
+those are distinguished from model-written prose. The policy follow-up still
+exposes internal evidence labels, an acknowledged presentation limitation. Gemini
+live execution is not claimed. See [final evaluation](docs/FINAL_EVALUATION.md)
+for executed results, public-only installation checks, and audit limits, and
 [provider verification](docs/PROVIDERS.md) for dated official links. Prior phase records
 remain under `docs/`.
+
+### Final local challenge capture
+
+The four challenge prompts were each run twice with real local
+`qwen3:4b-instruct` at runtime commit `88a4856`. The local run found 12 available
+guitars under R$ 1,000 and returned a source-grounded quote for the requested
+Takamine model. It failed to answer the store-address question (no tool was
+called), and routed the return-policy question to order lookup, which returned an
+unavailable-order message. The latter is a genuine routing error even though the
+runner marked the turn as answered. The exact local prompts and verbatim answers
+are kept outside Git because that capture used the supplied LOCAL files; no local
+report, source CSV, customer record, or policy text is part of the public
+repository. These results are not presented as an all-pass evaluation.
 
 ### Recent real Ollama conversation evaluations
 

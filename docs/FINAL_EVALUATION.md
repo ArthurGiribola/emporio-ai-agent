@@ -1,5 +1,10 @@
 # Final evaluation — November 1, 2026
 
+This report records the November 1 audit state and its test counts. The
+November 3 Qwen capture and current example set are summarized in the README and
+[example index](../examples/README.md); do not treat the historical counts below
+as the current suite result.
+
 ## Scope and actual execution
 
 Phase 4 evaluated the existing one-model CLI architecture; no framework, UI,
@@ -117,8 +122,11 @@ customer-data finding, and history was not rewritten to conceal it.
 The scan is pattern/fingerprint based, not mathematical proof against transformed
 secrets or all PII. Synthetic .invalid contacts are intentionally fictitious.
 Source-grounding and immutable ownership checks remain in Python; Gemini remains
-restricted to approved synthetic content/filtered intents. No remote exists and
-nothing was pushed or submitted.
+restricted to approved synthetic content/filtered intents. At the time of this
+November 1 audit, no remote was configured and nothing was pushed or submitted.
+The repository was linked to a GitHub remote afterward; check current branch and
+remote state before publication. No submission occurred during this historical
+audit.
 
 ## README review and remaining delivery questions
 
