@@ -15,7 +15,8 @@ class PricingConflictError(ValueError):
 def _normalize(value: str) -> str:
     folded = "".join(c for c in unicodedata.normalize("NFKD", value.casefold()) if not unicodedata.combining(c))
     aliases = {"violao": "violoes", "ukulele": "ukuleles", "guitarra": "guitarras",
-               "baixo": "baixos", "bateria": "baterias", "teclado": "teclados"}
+               "baixo": "baixos", "bateria": "baterias", "teclado": "teclados",
+               "sinteticos": "sintetico", "sinteticas": "sintetica"}
     return re.sub(r"\b\w+\b", lambda match: aliases.get(match.group(), match.group()), folded)
 
 

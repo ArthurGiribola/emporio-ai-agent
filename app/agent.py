@@ -16,6 +16,7 @@ from app.catalog_view import CatalogView, build_catalog_view
 from app.conversation import (memory_exchange, assistant_text, conversation_question,
     purchase_interest, explanation_followup, policy_followup, failure_message)
 from app.conversation import product_followup, failure_followup
+from app.conversation import conversational_intent
 from app.policies import normalize
 import re
 
@@ -164,11 +165,19 @@ class Agent:
             return AgentResult('invalid_input', 'Please send a nonempty question of at most 4000 characters.' if
                 isinstance(question,str) and language_hint(question) == 'en' else
                 'Envie uma pergunta com até 4000 caracteres para que eu possa ajudar.')
-        greeting = question.strip().casefold().rstrip("!?.")
-        if greeting in {"oi", "olá", "ola", "bom dia", "boa tarde", "boa noite"}:
-            return AgentResult("answered", "Olá! Posso ajudar com instrumentos, preços, promoções, políticas ou seu pedido. Como posso ajudar?")
-        if greeting in {"hello", "hi"}:
-            return AgentResult("answered", "Hello! I can help with instruments, pricing, promotions, store policies, or your order. What do you need?")
+        intent = conversational_intent(question)
+        if intent:
+            english = language_hint(question) == 'en' or normalize(question).split()[0] in {'hello', 'hi', 'hey'}
+            if intent == 'greeting':
+                answer = ('Hi! I can help you choose instruments, compare models, check prices and availability, explain store policies, or look up your authorized order.' if english else
+                          'Oi! Posso ajudar você a conhecer instrumentos, comparar modelos, consultar preços e disponibilidade, explicar as políticas da loja ou verificar seu pedido autorizado.')
+            elif intent == 'capabilities':
+                answer = ('I can help you explore instruments, compare options, check prices and availability, explain store policies, and look up an order authorized for this session.' if english else
+                          'Posso ajudar você a conhecer instrumentos, comparar opções, consultar preços e disponibilidade, explicar as políticas da loja e verificar um pedido autorizado nesta sessão.')
+            else:
+                answer = ('That is a great place to start. I can help you explore beginner-friendly instruments, compare options and check what is available. Is there a sound or style you are curious about?' if english else
+                          'Que legal começar! Posso ajudar você a explorar instrumentos para iniciantes, comparar opções e consultar o que está disponível. Tem algum som ou estilo que desperta sua curiosidade?')
+            return AgentResult('answered', answer)
         if self._provider.external:
             question = project_synthetic_question(question)
             if question is None:
@@ -194,6 +203,15 @@ class Agent:
             if self._recent_product_ids:
                 names = '; '.join(self._tools._catalog.get_product(i).name for i in self._recent_product_ids)
                 previous_answers.append('Verified instruments discussed or selected in this session: ' + names)
+            recent_policy = any(n == 'search_policies' and r.get('status') == 'ok'
+                                for n, r in self._last_results)
+            policy_time_followup = (recent_policy and bool(re.search(
+                r'\b\d+\s+(?:dias?|days?)\b|\b(?:cinco|sete|five|seven) dias?\b', normalize(question)))
+                and not online_return_question(question))
+            if policy_time_followup:
+                question = self._last_fact_question + '\nComplemento do cliente: ' + question
+                previous_questions.append(self._last_fact_question)
+                previous_answers.append('The customer is asking a follow-up about the retrieved store policy.')
             decision, language = assess_scope(self._provider, question, previous_questions, self._emit,
                                              previous_answers=previous_answers)
             # A narrow conversation-management request is about this service,
@@ -207,6 +225,15 @@ class Agent:
                 # the earlier valid conversation or change its bound identity.
                 return AgentResult("out_of_scope" if decision == "outside" else "scope_uncertain",
                                    scope_message(decision, language))
+            # Preserve the topic of a policy when a short follow-up adds a
+            # concrete time condition; re-retrieve instead of relying on prose memory.
+            # A product-list pronoun after an order question refers to the
+            # authenticated session order, never to a catalog search.
+            if (any(n == 'lookup_order' and r.get('status') == 'ok' for n, r in self._last_results)
+                    and re.search(r'\b(?:produtos?|itens?)\b', normalize(question))
+                    and re.search(r'\b(?:nele|dela|dele|nesse pedido|neste pedido|there|in it)\b', normalize(question))
+                    and not requested_order_id(question)):
+                question += f'\nPedido {self._order_id}.'
             # One bounded scope request precedes the unchanged business-request budget.
             question, clarification = resolve_list_reference(question, self._catalog_product_ids)
             if clarification:

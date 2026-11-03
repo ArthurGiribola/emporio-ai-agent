@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "model": "qwen3:4b-instruct",
+  "data_mode": "demo",
+  "scenarios": [
+    {
+      "id": "intro_new_customer",
+      "category": "introductions",
+      "turns": [
+        {"user": "Oi!", "expected_status": "answered", "must_not_call_tools": true},
+        {"user": "Sou novo aqui, em que você pode me ajudar?", "expected_status": "answered", "must_not_call_tools": true},
+        {"user": "Como funciona esse atendimento?", "expected_status": "answered", "must_not_call_tools": true}
+      ]
+    },
+    {
+      "id": "beginner_and_shopping_interest",
+      "category": "beginner_shopping",
+      "turns": [
+        {"user": "Nunca toquei um instrumento. Por onde começo?", "expected_status": "answered", "must_not_call_tools": true},
+        {"user": "Gostaria de comprar dois produtos.", "expected_status": "answered", "must_not_call_tools": true, "must_not_claim_purchase": true}
+      ]
+    },
+    {
+      "id": "catalog_product_followup",
+      "category": "product_followup",
+      "turns": [
+        {"user": "Quais produtos sintéticos estão disponíveis?", "expected_status": "answered", "must_call_tool": "search_products", "must_include_any": ["Violão Sintético Nylon", "Violão Sintético Aço"]},
+        {"user": "Qual é o estoque do item 1?", "expected_status": "answered", "must_call_tool": "get_product", "must_include_any": ["Violão Sintético Nylon", "3 unidades"]}
+      ]
+    },
+    {
+      "id": "policy_followup",
+      "category": "policies",
+      "turns": [
+        {"user": "Comprei pela internet e me arrependi. Qual é o prazo para pedir devolução?", "expected_status": "answered", "must_call_tool": "search_policies", "must_include_any": ["confirmar", "esclarecer"]},
+        {"user": "E se já passaram cinco dias?", "expected_status": "answered", "must_call_tool": "search_policies", "must_include_all": ["confirmar", "esclarecer"], "must_not_include": ["sete dias", "7 dias"], "must_redact_answer": true}
+      ]
+    },
+    {
+      "id": "authorized_demo_order",
+      "category": "authorized_orders",
+      "turns": [
+        {"user": "Qual é o status do meu pedido?", "expected_status": "answered", "must_call_tool": "lookup_order"},
+        {"user": "Quais produtos estão nele?", "expected_status": "answered", "must_call_tool": "lookup_order", "must_include_any": ["Violão Sintético Nylon", "R$ 99,00"]}
+      ]
+    }
+  ]
+}

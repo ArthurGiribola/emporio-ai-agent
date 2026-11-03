@@ -62,8 +62,12 @@ def assess_scope(provider, question, previous_questions, observer=None, *, previ
                 and isinstance(arguments["decision"], str) and isinstance(arguments["language"], str)
                 and arguments["decision"] in {"shop", "outside", "uncertain"}
                 and arguments["language"] in {"pt", "en"}):
+            if observer:
+                observer({"event": "scope_decision", "status": arguments["decision"]})
             return arguments["decision"], hint or arguments["language"]
     # Malformed, missing, or multiple decisions never authorize a business turn.
+    if observer:
+        observer({"event": "scope_decision", "status": "uncertain"})
     return "uncertain", fallback
 
 

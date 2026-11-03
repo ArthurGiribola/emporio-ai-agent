@@ -38,6 +38,57 @@ class ReliabilityTests(unittest.TestCase):
         provider.complete.side_effect = replies
         return Agent(provider, self.tools, **kwargs), provider
 
+    def test_conversational_intents_do_not_require_catalog_evidence(self):
+        agent, provider = self.agent([])
+        for question in ('Oi!', 'Sou novo aqui, em que você pode me ajudar?',
+                         'Como funciona esse atendimento?',
+                         'Nunca toquei um instrumento. Por onde começo?'):
+            with self.subTest(question=question):
+                result = agent.run(question)
+                self.assertEqual(result.status, 'answered')
+                self.assertNotIn('confirmar os dados', result.text)
+        self.assertEqual(provider.complete.call_count, 0)
+
+    def test_purchase_interest_remains_informational_and_tool_free(self):
+        agent, provider = self.agent([])
+        result = agent.run('Gostaria de comprar dois produtos.')
+        self.assertEqual(result.status, 'answered')
+        self.assertIn('Quais instrumentos', result.text)
+        self.assertEqual(provider.complete.call_count, 0)
+
+    def test_followup_after_catalog_search_still_resolves_selected_product(self):
+        product = self.tools._catalog.get_product(1)
+        agent, _ = self.agent([call('search_products', query='sintético'), text()])
+        listing = agent.run('Liste os produtos sintéticos.')
+        self.assertEqual(listing.status, 'answered')
+        agent.focus_product(product.product_id)
+        result = agent.run('Nunca toquei um instrumento; esse é bom para começar?')
+        self.assertEqual(result.status, 'answered')
+
+    def test_plural_synthetic_query_finds_available_fixture_products(self):
+        products = self.tools._catalog.search_products('sintéticos', available_only=True)
+        self.assertEqual([p.name for p in products],
+                         ['Violão Sintético Nylon', 'Violão Sintético Aço'])
+
+    def test_policy_time_followup_retrieves_policy_again(self):
+        agent, provider = self.agent([call('search_policies', query='devolução online'), text(),
+                                      call('search_policies', query='devolução online cinco dias'), text()])
+        agent.run('Comprei pela internet e me arrependi. Qual é o prazo para pedir devolução?')
+        provider.complete.side_effect = [call('search_policies', query='devolução online'), text()]
+        result = agent.run('E se já passaram cinco dias?')
+        self.assertEqual(result.status, 'answered')
+        self.assertIn('search_policies', result.tools_called)
+
+    def test_order_item_followup_uses_bound_order_not_catalog(self):
+        agent, provider = self.agent([call('lookup_order', order_id=1), text(),
+                                      call('lookup_order', order_id=999), text()])
+        agent.run('Qual é o status do meu pedido?')
+        provider.complete.side_effect = [call('lookup_order', order_id=999), text()]
+        result = agent.run('Quais produtos estão nele?')
+        self.assertEqual(result.status, 'answered')
+        self.assertIn('lookup_order', result.tools_called)
+        self.assertIn('Violão Sintético Nylon', result.text)
+
     def test_plural_references_quantities_and_ambiguity(self):
         ids = (119, 124, 140)
         q, error = resolve_list_reference('Quero 2 unidades dos itens 1 e 3.', ids)

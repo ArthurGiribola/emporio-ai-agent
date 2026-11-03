@@ -39,6 +39,21 @@ def conversation_question(question):
             and bool(re.search(r'apag|limp|sum|resto|lembr|esque|delete|clear|forget|remember|where', t)))
 
 
+def conversational_intent(question):
+    """Recognize ordinary rapport and exploratory help that need no tool facts."""
+    t = normalize(question)
+    if re.fullmatch(r'(?:oi|ola|hello|hi|hey|bom dia|boa tarde|boa noite)[.! ]*', t):
+        return 'greeting'
+    if re.search(r'\b(?:em que (?:voce|posso) (?:me )?ajudar|what can you help|how can you help|'
+                 r'como funciona (?:esse|o) atendimento|how does (?:this|your) service work|'
+                 r'sou novo|sou nova|new here|first time here)\b', t):
+        return 'capabilities'
+    if re.search(r'\b(?:nunca toquei|nunca toque|never played|beginner|iniciante|'
+                 r'por onde comec|where should i start|getting started)\b', t):
+        return 'exploration'
+    return None
+
+
 def purchase_interest(question):
     t = normalize(question)
     return bool(re.search(r'\b(?:comprar|adquirir|buy|purchase)\b', t) or

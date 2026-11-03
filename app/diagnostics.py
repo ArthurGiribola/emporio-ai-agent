@@ -7,7 +7,7 @@ TOOLS = {'search_products', 'get_product', 'get_price_quote', 'list_promotions',
 CODES = {'provider_error', 'connection_error', 'timeout', 'invalid_json', 'invalid_response', 'output_limit',
          'response_too_large', 'rate_limit', 'http_error', 'invalid_tool_calls', 'invalid_arguments',
          'ambiguous_product_reference', 'product_not_found', 'pricing_conflict', 'tool_failure', 'tool_error',
-         'context_limit', 'limit_reached', 'unverified', 'answered', 'ok', 'error', 'internal_error', 'result_too_large', 'unknown_tool'}
+         'context_limit', 'limit_reached', 'unverified', 'answered', 'ok', 'error', 'internal_error', 'result_too_large', 'unknown_tool', 'shop', 'outside', 'uncertain'}
 
 
 def summarize_event(event):
