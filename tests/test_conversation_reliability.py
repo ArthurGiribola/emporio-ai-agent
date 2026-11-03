@@ -273,6 +273,61 @@ class ReliabilityTests(unittest.TestCase):
         self.assertIn('Quais instrumentos', result.text)
         self.assertEqual(provider.complete.call_count, 0)
 
+    def test_purchase_quantity_followup_uses_selected_product_and_verifies_stock(self):
+        agent, provider = self.agent([call('get_product', product_id=1), text(),
+                                      call('get_product', product_id=1), text()])
+        product = self.tools._catalog.get_product(1)
+        agent._catalog_product_ids = (1,)
+        agent.focus_product(1)
+        first = agent.run(f'Quero saber mais sobre {product.name}.')
+        self.assertIn(product.name, first.text)
+
+        answer = agent.run('gostaria de comprar 15 desse produto entao porfavor')
+
+        self.assertIn('get_product', answer.tools_called)
+        self.assertIn(product.name, answer.text)
+        self.assertIn(f'{product.stock_quantity} unidades', answer.text)
+        self.assertIn('não reserva o estoque', answer.text)
+        self.assertIn('nem cria um pedido', answer.text)
+        self.assertNotIn('Quais instrumentos', answer.text)
+        self.assertIn('Você mencionou 15 unidades', answer.text)
+        self.assertIn('não consigo confirmar essa quantidade completa', answer.text)
+
+    def test_purchase_quantity_within_recorded_stock_is_clear_but_not_a_reservation(self):
+        agent, _ = self.agent([call('get_product', product_id=1), text(),
+                               call('get_product', product_id=1), text()])
+        product = self.tools._catalog.get_product(1)
+        agent._catalog_product_ids = (1,)
+        agent.focus_product(1)
+        agent.run(f'Quero saber mais sobre {product.name}.')
+
+        answer = agent.run('Quero comprar 2 unidades desse produto.')
+
+        self.assertIn(f'O cadastro registra {product.stock_quantity} unidades', answer.text)
+        self.assertIn('não reserva o estoque nem cria um pedido', answer.text)
+
+    def test_pix_followup_does_not_match_se_as_the_prs_product_name(self):
+        from dataclasses import replace
+        from types import SimpleNamespace
+        from app.tool_runtime import ToolRuntime
+        base = self.tools._catalog.get_product(1)
+        records = {92: replace(base, product_id=92, name='Yamaha FG800 Dreadnought Natural', price_brl=Decimal('1299.00')),
+                   133: replace(base, product_id=133, name='PRS SE Custom 24', price_brl=Decimal('6800.00'))}
+        runtime = ToolRuntime(SimpleNamespace(products=records), None, None)
+        self.assertIsNone(runtime._named_product_id('se eu pagar com pix consigo desconto?'))
+        self.assertEqual(runtime._named_product_id('PRS SE Custom 24'), 133)
+
+        product = self.tools._catalog.get_product(1)
+        agent, _ = self.agent([call('get_price_quote', product_id=3, payment_method='pix'), text()])
+        agent._last_product_ids = (1,)
+        agent._recent_product_ids = (1, 3)
+
+        answer = agent.run('se eu pagar com pix consigo desconto ?')
+
+        self.assertIn(product.name, answer.text)
+        self.assertNotIn(self.tools._catalog.get_product(3).name, answer.text)
+        self.assertEqual(answer.tools_called, ('get_price_quote',))
+
     def test_followup_after_catalog_search_still_resolves_selected_product(self):
         product = self.tools._catalog.get_product(1)
         agent, _ = self.agent([call('search_products', query='sintético'), text(),

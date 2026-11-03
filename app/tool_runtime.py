@@ -14,7 +14,7 @@ from app.services import CatalogService, PricingConflictError
 from app.grounding import (catalog_arguments, catalog_question, requested_budget, render_catalog, wants_all,
                           english_question, requested_order_id, requested_product_id, order_record_followup, render_quote, render_order)
 from app.grounding import requested_product_ids, brl
-from app.conversation import advisory_question, failure_message
+from app.conversation import advisory_question, failure_message, purchase_interest, requested_quantity
 from app.return_policy import online_return_question, extract_online_return_rule, assess_online_return, render_online_return
 from app.catalog_view import product_issues
 
@@ -90,12 +90,14 @@ class ToolRuntime:
 
     def _named_product_id(self, question: str) -> int | None:
         """Resolve a sufficiently specific product name; return None on ambiguity."""
-        words = set(re.findall(r"\w+", normalize(question)))
+        # Very short Portuguese function words (notably "se" in a PIX
+        # follow-up) are not product identifiers and must not match PRS SE.
+        words = {word for word in re.findall(r"\w+", normalize(question)) if len(word) >= 3}
         ignored = {"de", "do", "da", "dos", "das", "the", "a", "an", "and", "with",
                    "instrument", "instruments", "instrumento", "instrumentos", "guitar", "guitarra", "violao", "violaoes"}
         matches = []
         for product in self._catalog.repository.products.values():
-            name_words = set(re.findall(r"\w+", normalize(product.name))) - ignored
+            name_words = {word for word in re.findall(r"\w+", normalize(product.name)) if len(word) >= 3} - ignored
             overlap = name_words & words
             # Exact/full names win, while a unique distinctive feature such as
             # “nylon” may identify a product in a small demo catalog.
@@ -249,7 +251,34 @@ class ToolRuntime:
                     available = 'Disponível' if product['available'] else 'Indisponível'
                     lines.append(f"**{product['name']}**\n\nCategoria: {product['category']}. Preço por unidade: {price}. Estoque registrado: {product['recorded_stock_quantity']} unidades. {available}.")
                 lines.extend(product_issues(source, english=english_question(question)))
-            return '\n\n'.join(lines)
+            answer = '\n\n'.join(lines)
+            if purchase_interest(question):
+                quantity = requested_quantity(question)
+                product = next(iter(products.values())) if len(products) == 1 else None
+                stock = product.get('recorded_stock_quantity') if product else None
+                if quantity is not None and type(stock) is int:
+                    if english_question(question):
+                        note = (f'You mentioned {quantity} units, but the catalog records only {stock} in stock; '
+                                'I cannot confirm that the full quantity is available. This lookup does not reserve stock or place an order.'
+                                if quantity > stock else
+                                f'The catalog records {stock} units, which covers the {quantity} you mentioned. '
+                                'This lookup does not reserve stock or place an order.')
+                    else:
+                        note = (f'Você mencionou {quantity} unidades, mas o cadastro registra apenas {stock} em estoque; '
+                                'não consigo confirmar essa quantidade completa. Esta consulta não reserva o estoque nem cria um pedido.'
+                                if quantity > stock else
+                                f'O cadastro registra {stock} unidades, o que cobre as {quantity} mencionadas. '
+                                'Esta consulta não reserva o estoque nem cria um pedido.')
+                elif quantity is not None:
+                    note = ('The catalog has no recorded stock quantity, so I cannot confirm that amount. This lookup does not place an order.'
+                            if english_question(question) else
+                            'O cadastro não informa a quantidade em estoque, então não consigo confirmar esse total. Esta consulta não cria um pedido.')
+                else:
+                    note = ('I can check the recorded stock and price, but I cannot place or reserve an order.'
+                            if english_question(question) else
+                            'Posso consultar o estoque e o preço registrados, mas não finalizo compras nem faço pedidos ou reservas.')
+                answer += '\n\n' + note
+            return answer
         for name, result in reversed(results):
             if name == "get_price_quote" and result.get("status") == "ok":
                 data = result["data"]

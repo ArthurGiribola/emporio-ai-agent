@@ -121,6 +121,14 @@ def purchase_interest(question):
                  and re.search(r'\b(?:quero|gostaria|agora|mude|troque|desejo|want|change|make)\b', t)))
 
 
+def requested_quantity(question):
+    """Extract an explicitly requested count without mistaking item numbers for quantity."""
+    match = re.search(
+        r'\b(\d{1,6})\s+(?:(?:unidades?|units?|pecas?|peças?)\b|(?:desse|dessa|deste|desta|do|da|dos|das)\b)',
+        normalize(question))
+    return int(match[1]) if match else None
+
+
 def advisory_question(question):
     """Allow scoped, non-transactional guidance without inventing store facts."""
     t = normalize(question)
@@ -153,7 +161,7 @@ def product_followup(question):
         return True
     words = set(re.findall(r'\w+', t))
     return bool(words) and words <= set(('qual e o a preco precinho precos valor quanto fica sai custa estoque tem esta disponivel '
-        'no pix pagando pagarei pagando com desconto price cost stock available availability and what is the how much '
+        'no pix pagando pagarei pagando com desconto se eu consigo price cost stock available availability and what is the how much '
         'does in on by using payment inclui promocao na promocional pagar se for de do da unitario normal '
         'deles delas desse dessa aquele aquela primeiro primeira').split())
 

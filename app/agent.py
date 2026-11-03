@@ -15,7 +15,7 @@ from app.return_policy import online_return_question
 from app.catalog_view import CatalogView, build_catalog_view
 from app.conversation import (memory_exchange, assistant_text, conversation_question,
     purchase_interest, advisory_question, exploration_response, simplify_request,
-    explanation_followup, policy_followup, failure_message)
+    explanation_followup, policy_followup, failure_message, requested_quantity)
 from app.conversation import product_followup, failure_followup
 from app.conversation import conversational_intent
 from app.policies import normalize
@@ -125,7 +125,7 @@ class Agent:
         """Resolve a descriptive follow-up only among products verified this session."""
         words = set(re.findall(r'\w+', normalize(question))) - {
             'esse', 'essa', 'este', 'esta', 'aquele', 'aquela', 'de', 'do', 'da', 'o', 'a', 'que',
-            'e', 'no', 'na', 'com', 'por', 'quanto', 'preco', 'valor', 'custa', 'aceita', 'aceitam',
+            'e', 'se', 'eu', 'no', 'na', 'com', 'por', 'quanto', 'preco', 'valor', 'custa', 'aceita', 'aceitam',
             'pix', 'desconto', 'disponivel', 'tem', 'estoque', 'stock', 'price', 'available',
             'this', 'that', 'it', 'the', 'of', 'with', 'for', 'does', 'is', 'cost', 'accepts'
         }
@@ -350,15 +350,20 @@ class Agent:
             if clarification:
                 return self._plain(question, history, clarification)
             if purchase_interest(question):
-                quantities = re.findall(r'\b(\d+)\s+(?:unidades?|units?)\b', normalize(question))
-                if quantities and self._last_product_ids:
-                    names = '; '.join(self._tools._catalog.get_product(i).name for i in self._last_product_ids)
+                quantity = requested_quantity(question)
+                references = requested_product_ids(question)
+                if not references and len(self._last_product_ids) == 1 and product_followup(question):
+                    references = self._last_product_ids
+                if len(references) == 1:
+                    # Carry a trusted, already-resolved product into the factual
+                    # tool path. Purchase intent never creates or reserves an order.
+                    question += f'\nProduto ID {references[0]}.'
+                    if quantity is not None:
+                        question += f' Quantidade mencionada: {quantity} unidades.'
+                else:
                     return self._plain(question, history,
-                        (f'You mentioned {", ".join(quantities)} units. Which quantity do you want for each instrument: {names}? I can check stock and unit prices, but cannot create an order or complete a purchase.' if language == 'en' else
-                         f'Você mencionou {", ".join(quantities)} unidades. Confirma a quantidade para cada instrumento: {names}? Posso conferir estoque e preços por unidade, mas não crio pedidos nem finalizo compras.'))
-                return self._plain(question, history,
-                    'Which instruments are you interested in? I can check stock, compare models and explain prices, but I cannot complete a purchase or create an order.' if language == 'en' else
-                    'Quais instrumentos você tem em mente? Posso conferir estoque, comparar modelos e explicar os preços, mas não finalizo compras nem crio pedidos.')
+                        'Which instruments do you have in mind? I can check stock and prices, but cannot complete or reserve an order.' if language == 'en' else
+                        'Quais instrumentos você tem em mente? Posso conferir estoque e preços, mas não finalizo compras nem crio ou reservo pedidos.')
             if explanation_followup(question) and self._last_failure:
                 return self._plain(question, history, failure_message(self._last_failure, language == 'en'))
             explicit_other = re.search(r'\b(?:outro|outra|other)\b.*\b(?:produto|instrumento|product|instrument|viol\w*|guit\w*|ukulel\w*|baix\w*)\b', normalize(question))
