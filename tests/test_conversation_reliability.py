@@ -358,6 +358,22 @@ class ReliabilityTests(unittest.TestCase):
         self.assertIn('Você mencionou 15 unidades', answer.text)
         self.assertIn('não consigo confirmar essa quantidade completa', answer.text)
 
+    def test_bare_purchase_quantity_uses_the_single_recently_verified_product(self):
+        agent, _ = self.agent([call('get_product', product_id=1), text(),
+                               call('get_product', product_id=1), text()])
+        product = self.tools._catalog.get_product(1)
+        first = agent.run('Qual é o produto com ID 1?')
+        self.assertIn(product.name, first.text)
+
+        answer = agent.run('Gostaria de comprar 2 por favor.')
+
+        self.assertEqual(answer.tools_called, ('get_product',))
+        self.assertIn(product.name, answer.text)
+        self.assertIn('cobre as 2 mencionadas', answer.text)
+        self.assertIn(f'O cadastro registra {product.stock_quantity} unidades', answer.text)
+        self.assertIn('não reserva o estoque nem cria um pedido', answer.text)
+        self.assertNotIn('Quais instrumentos', answer.text)
+
     def test_purchase_quantity_within_recorded_stock_is_clear_but_not_a_reservation(self):
         agent, _ = self.agent([call('get_product', product_id=1), text(),
                                call('get_product', product_id=1), text()])
@@ -503,6 +519,8 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(requested_quantity('duas unidades do violão'), 2)
         self.assertEqual(requested_quantity('uma unidade do instrumento'), 1)
         self.assertEqual(requested_quantity('6 unidades do instrumento'), 6)
+        self.assertEqual(requested_quantity('gostaria de comprar 2 por favor'), 2)
+        self.assertEqual(requested_quantity('queria comprar dois, por favor'), 2)
         self.assertIsNone(requested_quantity('Qual é o estoque do item 63?'))
 
         agent, _ = self.agent([call('get_product', product_id=3), text(),

@@ -475,7 +475,12 @@ class Agent:
                     return self._plain(question, history,
                         'Which instrument do you mean? I found more than one matching catalog option.' if language == 'en' else
                         'Qual instrumento você quer consultar? Encontrei mais de uma opção compatível no catálogo.')
-                if not references and len(self._last_product_ids) == 1 and product_followup(question):
+                generic_multi_item = bool(re.search(r'\b(?:produtos?|instrumentos?)\b', normalize(question)))
+                if (not references and len(self._last_product_ids) == 1
+                        and (product_followup(question) or (quantity is not None and not generic_multi_item))):
+                    # A standalone purchase quantity refers to the single
+                    # product most recently verified in this session, unless
+                    # the customer explicitly asks for generic multiple items.
                     references = self._last_product_ids
                 if len(references) == 1:
                     # Carry a trusted, already-resolved product into the factual

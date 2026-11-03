@@ -127,6 +127,12 @@ def purchase_interest(question):
 def requested_quantity(question):
     """Extract an explicitly requested count without mistaking item numbers for quantity."""
     text = normalize(question)
+    purchase_quantity = re.search(
+        r'\b(?:comprar|compro|compraria|adquirir|buy|purchase)\s+'
+        r'(\d{1,6}|zero|um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez)\b', text)
+    if purchase_quantity:
+        value = purchase_quantity[1]
+        return int(value) if value.isdigit() else int({**NUMERALS, "uma": "1", "duas": "2"}[value])
     match = re.search(
         r'\b(\d{1,6})\s+(?:(?:unidades?|units?|pecas?)\b|(?:desse|dessa|deste|desta|do|da|dos|das)\b)',
         text)
