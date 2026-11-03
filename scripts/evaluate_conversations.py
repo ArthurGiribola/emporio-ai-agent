@@ -78,15 +78,22 @@ def evaluation_route_event(event):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--scenarios', type=Path, default=ROOT / 'scripts' / 'conversation_eval_seed.json')
-    parser.add_argument('--output', type=Path, default=ROOT / 'conversation-eval-report.json')
+    parser.add_argument('--scenarios', type=Path, default=ROOT / 'scripts' / 'conversation_scenarios.json')
+    parser.add_argument('--suite', choices=('smoke', 'primary', 'variety', 'all'), default='smoke',
+                        help='Named subset of the shared scenario dataset (default: smoke).')
+    parser.add_argument('--output', type=Path, default=ROOT / 'reports' / 'latest.json')
     parser.add_argument('--model', default='qwen3:4b-instruct')
     args = parser.parse_args()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     dataset = json.loads(args.scenarios.read_text(encoding='utf-8'))
+    scenarios = [scenario for scenario in dataset['scenarios']
+                 if args.suite == 'all' or scenario.get('suite', 'smoke') == args.suite]
+    if not scenarios:
+        parser.error(f"No scenarios found for suite '{args.suite}' in {args.scenarios}")
     env = {'EMPORIO_DATA_MODE': 'demo', 'OLLAMA_MODEL': args.model,
            'OLLAMA_BASE_URL': os.environ.get('OLLAMA_BASE_URL', 'http://127.0.0.1:11434')}
     report = {'started_at': datetime.now(timezone.utc).isoformat(), 'model': args.model,
+              'suite': args.suite,
               'data_mode': 'DEMO synthetic fixtures', 'source_data_included': False,
               'scenarios': []}
     try:
@@ -109,7 +116,7 @@ def main():
         return 2
 
     try:
-        for scenario in dataset['scenarios']:
+        for scenario in scenarios:
             session.reset()
             turns, scenario_pass = [], True
             for case in scenario['turns']:

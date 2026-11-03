@@ -16,7 +16,7 @@ if errorlevel 1 (
   exit /b 1
 )
 set "OLLAMA_MODEL=qwen3:4b-instruct"
-"%PYTHON%" "%PROJECT_DIR%scripts\evaluate_conversations.py" --output "%PROJECT_DIR%conversation-eval-report.json"
+"%PYTHON%" "%PROJECT_DIR%scripts\evaluate_conversations.py" --suite smoke
 if errorlevel 1 echo A avaliacao nao terminou; veja a causa acima.
 pause
 endlocal

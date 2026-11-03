@@ -23,6 +23,7 @@ htmlcov/
 # Local planning input; not an English project deliverable
 /docs/CODEX_FIRST_PROMPT.md
 
-# Local conversation-evaluation reports and captured test output (never submit).
+# Local evaluation output/archive and captured test output (never submit).
+/reports/
 /conversation-eval-*.json
 /full-suite-out.txt

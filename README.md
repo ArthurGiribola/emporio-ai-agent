@@ -419,16 +419,18 @@ in the primary suite and **48/48 turns passed** in the additional paraphrase sui
 Mean observed latency was about 2.1 seconds and 2.3 seconds per turn, respectively.
 These are small, finite evaluations—not a guarantee of perfect answers or coverage
 of every phrasing. Ollama must be running locally and the model must already be
-installed. The runner always selects DEMO data. The commands below write reports
-to the repository root; these generated reports are intentionally git-ignored.
+installed. The runner always selects DEMO data. The shared scenario file keeps
+the `primary` and `variety` suites separate so their reported counts remain
+reproducible; the default `smoke` suite contains the earlier 11-turn check.
+Each run overwrites the single local, git-ignored `reports/latest.json` report.
 
 From the repository root in PowerShell, with the desktop environment installed as
 above:
 
 ```powershell
 $env:PYTHONIOENCODING = "utf-8"
-.\.venv-desktop\Scripts\python.exe scripts/evaluate_conversations.py --scenarios scripts/conversation_eval_50.json --output conversation-eval-primary-report.json --model qwen3:4b-instruct
-.\.venv-desktop\Scripts\python.exe scripts/evaluate_conversations.py --scenarios scripts/conversation_eval_variety.json --output conversation-eval-variety-report.json --model qwen3:4b-instruct
+.\.venv-desktop\Scripts\python.exe scripts/evaluate_conversations.py --suite primary --model qwen3:4b-instruct
+.\.venv-desktop\Scripts\python.exe scripts/evaluate_conversations.py --suite variety --model qwen3:4b-instruct
 ```
 
 ## AI assistance and submission status
