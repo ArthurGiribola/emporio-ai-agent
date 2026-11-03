@@ -14,13 +14,16 @@ def wants_all(question: str) -> bool:
 
 
 def catalog_question(question: str) -> bool:
-    return bool(re.search(r"\b(?:quais|existem|modelos|opcoes|disponiveis|disponivel|liste|listar|catalogo|todos|todas|all|list|available|tem|vende|estoque|baratos|barato|precos|prices|instrument\w*|viol\w*|guit\w*|ukulel\w*|baix\w*)\b", normalize(question)))
+    return bool(wants_all(question) or re.search(r"\b(?:quais|existem|modelos|opcoes|disponiveis|disponivel|liste|listar|lista|catalogo|todos|todas|all|list|available|tem|vende|estoque|baratos|barato|precos|prices|instrument\w*|viol\w*|guit\w*|ukulel\w*|baix\w*)\b", normalize(question)))
 
 
 def requested_budget(question: str) -> Decimal | None:
-    match = re.search(r"(?:ate|no maximo|up to|under)\s*(?:r\$\s*)?(\d[\d.,]*)", normalize(question))
+    text = normalize(question)
+    match = re.search(r"(?:ate|no maximo|up to|under|gastar(?:\s+ate)?|spend(?:\s+up\s+to)?)\s*(?:uns?\s*)?(?:r\$\s*)?(\d[\d.,]*)", text)
+    if not match and re.search(r"\b(?:tenho|estou com|to com|limite|orcamento de|budget of)\b", text):
+        match = re.search(r"r\$\s*(\d[\d.,]*)|\b(\d[\d.,]*)\s+reais?\b", text)
     if match:
-        number = match.group(1).rstrip(".,")
+        number = (match.group(1) or match.group(2)).rstrip(".,")
         if "," in number:
             number = number.replace(".", "").replace(",", ".")
         elif re.fullmatch(r"\d{1,3}(?:\.\d{3})+", number):
@@ -28,8 +31,7 @@ def requested_budget(question: str) -> Decimal | None:
         if re.fullmatch(r"\d{1,12}(?:\.\d{1,2})?", number):
             return Decimal(number)
         return None
-    text = normalize(question)
-    words = re.search(r"(?:ate|no maximo|up to|under)\s+((?:zero|um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|onze|doze|treze|quatorze|catorze|quinze|dezesseis|dezessete|dezoito|dezenove|vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa|cem|cento|duzentos|duzentas|trezentos|trezentas|quatrocentos|quatrocentas|quinhentos|quinhentas|seiscentos|seiscentas|setecentos|setecentas|oitocentos|oitocentas|novecentos|novecentas|mil)(?:\s+e\s+(?:zero|um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|onze|doze|treze|quatorze|catorze|quinze|dezesseis|dezessete|dezoito|dezenove|vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa|cento|duzentos|duzentas|trezentos|trezentas|quatrocentos|quatrocentas|quinhentos|quinhentas|seiscentos|seiscentas|setecentos|setecentas|oitocentos|oitocentas|novecentos|novecentas))*)(?:\s+reais?)?\b", text)
+    words = re.search(r"(?:ate|no maximo|up to|under|gastar(?:\s+ate)?|spend(?:\s+up\s+to)?)\s+((?:zero|um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|onze|doze|treze|quatorze|catorze|quinze|dezesseis|dezessete|dezoito|dezenove|vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa|cem|cento|duzentos|duzentas|trezentos|trezentas|quatrocentos|quatrocentas|quinhentos|quinhentas|seiscentos|seiscentas|setecentos|setecentas|oitocentos|oitocentas|novecentos|novecentas|mil)(?:\s+e\s+(?:zero|um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|onze|doze|treze|quatorze|catorze|quinze|dezesseis|dezessete|dezoito|dezenove|vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa|cento|duzentos|duzentas|trezentos|trezentas|quatrocentos|quatrocentas|quinhentos|quinhentas|seiscentos|seiscentas|setecentos|setecentas|oitocentos|oitocentas|novecentos|novecentas))*)(?:\s+reais?)?\b", text)
     if not words:
         return None
     values = {'zero':0,'um':1,'uma':1,'dois':2,'duas':2,'tres':3,'quatro':4,'cinco':5,'seis':6,'sete':7,'oito':8,'nove':9,
@@ -76,17 +78,19 @@ def catalog_arguments(question: str, arguments: dict, catalog) -> dict:
     # model's guessed category, currency, pagination, or stale search query.
     ignored = set((
         "quais qual que produto produtos instrumento instrumentos modelo modelos opcoes existem liste listar lista catalogo todos todas completo completa"
-        " disponivel disponiveis disponivel tem temos vende vendem estoque barato baratos barata baratas caro caros mais menos ao"
+        " disponivel disponiveis tem tenho temos tao ta esta estao voces vcs vende vendem estoque barato baratinho baratinhos barata baratas caro carinhos caros mais menos ao"
         " estao esta primeiro primeiros primeira primeiras ultimo ultimos do da de dos das um uma uns umas o a os as me mostra mostre ver"
         " por ate no maximo reais real r com ate todos tudo incluindo pf favor please all every available product products"
         " quanto custa cost costs preco precos price prices valor values quanto custa aceita aceitam aceita bem comparar compare comparison differences difference diferenca"
-        " quero queria queremos gostariamos estou estamos pensando considerando escolhendo ainda levar separar choose choosing looking help me can you please"
+        " quero queria queremos gostariamos estou estamos to pensando considerando namorando escolhendo ainda levar pegar separa separar passa manda mostra confere gastar uns umao choose choosing looking help me can you please"
         " stock stocks inventory in stock do you does it"
         " demonstration synthetic only filtered intent tokens original text withheld"
         " instrument instruments models options list show catalog full complete cheapest cheapest first lowest highest price sorted price prices preco precos valor final"
-        " tiver tenham tenha haja"
-        " in stock out of stock unavailable inactive indisponiveis indisponivel inativos inativo sem estoque and or to from the a an de do da dos das e ou no na nos nas"
+        " tiver tenham tenha haja ai por ai da pra pra pro pras pros em conta"
+        " nao manjo muito tipo por aqui beleza tranquilo certo agora"
+        " in stock out of stock unavailable inactive indisponiveis indisponivel inativos inativo sem estoque and or to from the a an de do da dos das e ou no na nos nas em pra pro pras pros ai"
         ""
+        " unidade unidades sobrando sobra sobrando algum alguma qualquer modelo modelos"
         " zero dez vinte trinta quarenta cinquenta sessenta setenta oitenta noventa cem cento duzentos duzentas"
         " trezentos trezentas quatrocentos quatrocentas quinhentos quinhentas seiscentos seiscentas setecentos"
         " setecentas oitocentos oitocentas novecentos novecentas mil"
@@ -189,9 +193,13 @@ def requested_order_id(question: str) -> int | None:
 
 def order_record_followup(question: str) -> bool:
     text = normalize(question)
-    return (requested_order_id(question) is None and not re.search(r"\b(?:product|produto|customer|cliente|identity|identidade|catalog|price)\b", text)
-            and bool(re.search(r"record|this order|that order|registro|esse pedido", text))
-            and bool(re.search(r"tracking|delivery|status|total|rastre|entrega", text)))
+    if requested_order_id(question) is not None or re.search(
+            r"\b(?:product|produto|customer|cliente|identity|identidade|catalog|catalogo)\b", text):
+        return False
+    return bool(re.search(r"\b(?:record|this order|that order|registro|esse pedido|"
+                          r"what i bought|o que (?:eu )?comprei|o que foi comprado)\b", text)
+                or (re.search(r"\b(?:pedido|order)\b", text)
+                    and re.search(r"\b(?:tracking|delivery|status|total|rastre|entrega|itens?|produtos?)\b", text)))
 
 
 def render_quote(data: dict, name: str, *, english: bool, synthetic: bool = False, issues=()) -> str:

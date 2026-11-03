@@ -14,7 +14,7 @@ from app.services import CatalogService, PricingConflictError
 from app.grounding import (catalog_arguments, catalog_question, requested_budget, render_catalog, wants_all,
                           english_question, requested_order_id, requested_product_id, order_record_followup, render_quote, render_order)
 from app.grounding import requested_product_ids, brl
-from app.conversation import failure_message
+from app.conversation import advisory_question, failure_message
 from app.return_policy import online_return_question, extract_online_return_rule, assess_online_return, render_online_return
 from app.catalog_view import product_issues
 
@@ -109,40 +109,56 @@ class ToolRuntime:
 
     def required_evidence(self, question: str) -> str | None:
         text = normalize(question)
-        if requested_order_id(question) is not None:
+        factual_signal = re.search(
+            r'\b(?:preco\w*|valor|custa|quanto|price|cost|estoque|stock|dispon\w*|unidade\w*|'
+            r'available|promoc\w*|discount|politic\w*|garanti\w*|devol\w*|reembols\w*|'
+            r'pedido|order|rastre\w*|tracking|horario|abre|fecha|pag\w*.*aceit\w*)\b', text)
+        if advisory_question(question) and not factual_signal:
+            return None
+        if requested_order_id(question) is not None or order_record_followup(question) or re.search(
+                r'\b(?:pedido|order|rastre\w*|tracking)\b', text):
             return "lookup_order"
         if online_return_question(question) or re.search(
-                r'\b(?:forma(?:s)? de pagamento|meios de pagamento|payment methods|pix acumula|'
-                r'promocao.*pix|pix.*promocao|pagamento.*aceit|payment.*accepted)\b', text):
+                r'\b(?:pag\w*.*(?:aceit\w*|forma\w*|meio\w*)|(?:forma\w*|meio\w*).*pag\w*|'
+                r'payment methods|pix acumula|promoc\w*.*pix|pix.*promoc\w*|horario\w*|abre|fecha|'
+                r'funcionamento|complaint\w*|reclam\w*|shipping|frete|entrega)\b', text):
             return "search_policies"
-        if requested_product_ids(question) and re.search(r"price|cost|quote|preco|valor|pix|desconto|discount|promocao", text):
+        price = bool(re.search(r'\b(?:preco\w*|valor|custa|quanto|sai|fica|price|cost|how much|pix|desconto|discount|promoc\w*)\b', text))
+        stock = bool(re.search(r'\b(?:estoque|stock|dispon\w*|unidade\w*|sobrando|available)\b', text))
+        if requested_product_ids(question) and price:
             return "get_price_quote"
         if requested_product_ids(question) and not re.search(r'\b(?:garantia|warranty|policy|politica|devolucao)\b', text):
             return 'get_product'
-        if (re.search(r'\b(?:compar\w*|compare|difference|differences|diferenc\w*)\b', text)
-                and not re.search(r'\b(?:preco|valor|custa|quanto|price|cost|pix)\b', text)
-                and re.search(r'\b(?:nylon|aco|steel|string|cordas?|instrument\w*|viol\w*|guit\w*|ukulel\w*)\b', text)):
-            return 'get_product'
         named = self._named_product_id(question)
         if named is not None:
-            if re.search(r'\b(?:preco|valor|custa|quanto|price|cost|pix|desconto)\b', text):
+            if price:
                 return 'get_price_quote'
-            if re.search(r'\b(?:estoque|disponivel|tem|stock|available)\b', text):
+            if stock:
                 return 'get_product'
+            # A uniquely identified item question still needs its catalog
+            # record; a language model paraphrase alone is not evidence.
             return 'get_product'
-        if self._catalog.category_ids_from_text(question):
+        if stock and re.search(r'\b(?:algum|alguma|qualquer|any|anything)\b', text):
+            return 'search_products'
+        if stock and re.search(r'\b(?:do you stock|have (?:it )?in stock|temos? (?:o |a |algum )?)\b', text):
             return 'search_products'
         if re.search(r'\b(?:promoc\w*|discounts?|descont\w*)\b', text):
             return 'list_promotions'
-        # An earlier catalog/price result is not evidence for a new policy topic.
         if re.search(r"\b(?:polic(?:y|ies)|politic\w*|warrant(?:y|ies)|garanti\w*|returns?|refunds?|"
-                     r"devol\w*|reembols\w*|shipping|frete\w*|opening hours|horario\w*|complaints?|reclam\w*)\b", normalize(question)):
+                     r"devol\w*|reembols\w*|shipping|frete\w*|opening hours|horario\w*|complaints?|reclam\w*)\b", text):
             return "search_policies"
-        if (requested_budget(question) is not None or re.search(r'\b(?:mais baratos?|menor preco|lowest price|cheapest|'
-                    r'tem .*viol|vende .*viol|algum .*disponivel|available now)\b', text)):
+        if requested_budget(question) is not None:
             return 'search_products'
-        if catalog_question(question) and not requested_product_ids(question) and not re.search(r'promoc|promotion', text):
-            return "search_products"
+        if wants_all(question):
+            return 'search_products'
+        has_catalog_subject = bool(self._catalog.category_ids_from_text(question) or re.search(
+            r'\b(?:produt\w*|instrument\w*|model\w*|catalog\w*|viol\w*|guit\w*|ukulel\w*|baix\w*|teclad\w*|bateri\w*)\b', text))
+        has_search_intent = bool(re.search(
+            r'\b(?:quais?|tem|temos|vende|mostr\w*|list\w*|busc\w*|procur\w*|opcoes|dispon\w*|'
+            r'estoque|stock|cheapest|lowest price|mais barato\w*|mais em conta|menor preco|algum|alguma|'
+            r'all|every|everything|todos|todas|tudo)\b', text))
+        if has_catalog_subject and (has_search_intent or price or stock or wants_all(question)):
+            return 'search_products'
         return None
 
     def grounded_answer(self, question: str, results: list, model_text: str, prior_results=()) -> str:
@@ -160,7 +176,7 @@ class ToolRuntime:
             for name, result in reversed(results):
                 if name == "search_policies" and result.get("status") == "ok":
                     return render_online_return(question, result["data"])
-        price_question = bool(re.search(r'\b(?:preco|prec\w*|valor|quanto custa|custa|price|cost|how much)\b', normalize(question)))
+        price_question = bool(re.search(r'\b(?:preco\w*|valor|quanto custa|custa|price|cost|how much)\b', normalize(question)))
         if price_question:
             for name, result in reversed(results):
                 rows = result.get('data', {}).get('products', []) if name == 'search_products' and result.get('status') == 'ok' else []
@@ -178,17 +194,29 @@ class ToolRuntime:
             if name == "search_policies" and result.get("status") == "ok":
                 data = result["data"]
                 sections = data.get("sections", [])
-                # Approved demo placeholders contain no terms to paraphrase.
-                # Do not turn absent evidence into a confident negative policy.
-                if self.is_synthetic and sections and all(
-                        s["text"] == "Synthetic reference only; demo operator review required." for s in sections):
+                if self.is_synthetic and sections:
                     references = "; ".join(f"{s['section']} (p. {', '.join(map(str, s['pages']))})" for s in sections)
+                    pix_promotion = (bool(re.search(r'\bpix\b', normalize(question))
+                                          and re.search(r'promoc\w*|descont\w*|acumul\w*', normalize(question)))
+                                     and any(section.get("section") == "6.2" and
+                                             "do not stack" in normalize(section.get("text", ""))
+                                             for section in sections))
+                    if pix_promotion:
+                        reference = next((section for section in data.get("references", [])
+                                          if section.get("section") == "6.2"), None)
+                        citation = (f"section 6.2 (page(s) {', '.join(map(str, reference['pages']))})"
+                                    if english_question(question) and reference else
+                                    f"seção 6.2, página(s) {', '.join(map(str, reference['pages']))}"
+                                    if reference else "seção 6.2")
+                        if english_question(question):
+                            return f"No. In the synthetic demonstration policy, PIX and promotional discounts do not stack. Source: {citation}."
+                        return f"Não. Na política de demonstração, o desconto de PIX não se soma à promoção. Fonte: {citation}."
                     if english_question(question):
-                        return ("The demonstration policy doesn't specify these conditions, so I can't confirm them. "
-                                "Customer service would need to clarify them before you rely on an answer.\n\n"
+                        return ("The synthetic demonstration policy doesn't specify this condition, so I can't confirm it. "
+                                "Customer service would need to clarify it.\n\n"
                                 f"Sources: sections {references}.")
-                    return ("A política de demonstração não detalha essas condições, então não consigo confirmá-las. "
-                            "O atendimento precisa esclarecê-las antes de orientar você com segurança.\n\n"
+                    return ("A política de demonstração não especifica essa condição, então não consigo confirmá-la. "
+                            "O atendimento precisa esclarecê-la.\n\n"
                             f"Fontes: seções {references}.")
         if catalog_question(question):
             if any(name == "search_products" and result.get("status") == "error" for name, result in results):

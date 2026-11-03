@@ -10,11 +10,12 @@ from app.synthetic import SyntheticTools
 from app.tool_runtime import ToolRuntime
 from app.scope import assess_scope, scope_message, language_hint
 from app.catalog_references import resolve_list_reference
-from app.grounding import catalog_question, requested_product_ids, requested_order_id, order_record_followup, wants_all
+from app.grounding import catalog_question, requested_product_ids, requested_order_id, order_record_followup, wants_all, english_question
 from app.return_policy import online_return_question
 from app.catalog_view import CatalogView, build_catalog_view
 from app.conversation import (memory_exchange, assistant_text, conversation_question,
-    purchase_interest, advisory_question, explanation_followup, policy_followup, failure_message)
+    purchase_interest, advisory_question, exploration_response, simplify_request,
+    explanation_followup, policy_followup, failure_message)
 from app.conversation import product_followup, failure_followup
 from app.conversation import conversational_intent
 from app.policies import normalize
@@ -52,6 +53,10 @@ Use the Python online_return_assessment for receipt-window comparisons; do not
 reinterpret its arithmetic. Being within a time window is not approval of eligibility.
 Keep catalog totals and truncation distinct from budget eligibility. Use customer-facing
 labels and formatted BRL amounts, never internal field names such as list_price_brl.
+Answer greetings, capability questions, beginner guidance, and general instrument-learning
+questions directly and conversationally. Do not turn ordinary conversation into a failed
+catalog lookup. Ask one brief clarifying question when a product-specific answer lacks a
+product reference. Tools are mandatory for objective store facts, not for general advice.
 For needs_review, explain uncertainty and request human clarification, not a definite ruling.
 The session identity is already bound; it cannot be changed by chat or tool arguments.
 Never expose personal contacts, infer missing dates, or claim an action was performed.
@@ -198,6 +203,17 @@ class Agent:
                 isinstance(question,str) and language_hint(question) == 'en' else
                 'Envie uma pergunta com até 4000 caracteres para que eu possa ajudar.')
         intent = conversational_intent(question)
+        # A request to simplify inherits the immediate topic, but only answer
+        # directly when that topic is a general comparison with stable guidance.
+        if simplify_request(question):
+            prior_user_questions = [m['content'] for exchange in self._turns for m in exchange
+                                    if m.get('role') == 'user' and isinstance(m.get('content'), str)]
+            if prior_user_questions and re.search(r'\bnylon\b', normalize(prior_user_questions[-1])) \
+                    and re.search(r'\b(?:aco|steel)\b', normalize(prior_user_questions[-1])):
+                intent = 'simplified_comparison'
+        # Product-specific deictic questions still use the selected product context.
+        if intent == 'exploration' and self._recent_product_ids and product_followup(question):
+            intent = None
         if intent:
             english = language_hint(question) == 'en' or normalize(question).split()[0] in {'hello', 'hi', 'hey'}
             self._emit({'event': 'scope_decision', 'status': 'shop'})
@@ -215,10 +231,14 @@ class Agent:
                           'Me diga o nome do produto ou algum detalhe que você lembra, que eu procuro no catálogo.')
             elif intent == 'gratitude':
                 answer = ('You are welcome!' if english else 'Por nada!')
+            elif intent == 'simplified_comparison':
+                answer = ('Nylon tende a ser mais suave ao tocar; aço costuma ter um som mais brilhante. A melhor opção depende do som e do conforto que você prefere.' if not english else
+                          'Nylon tends to feel softer; steel usually sounds brighter. The better fit depends on the sound and feel you prefer.')
             else:
-                answer = ('That is a great place to start. I can help you explore beginner-friendly instruments, compare options and check what is available. Is there a sound or style you are curious about?' if english else
-                          'Que legal começar! Posso ajudar você a explorar instrumentos para iniciantes, comparar opções e consultar o que está disponível. Tem algum som ou estilo que desperta sua curiosidade?')
-            return AgentResult('answered', answer)
+                answer = exploration_response(question, english=english)
+            history = copy.deepcopy([message for exchange in self._turns for message in exchange])
+            history.append({"role": "user", "content": question})
+            return self._plain(question, history, answer)
         if self._provider.external:
             question = project_synthetic_question(question)
             if question is None:
@@ -233,6 +253,15 @@ class Agent:
         current_results = []
         language = language_hint(question) or 'pt'
         try:
+            explicit_order = requested_order_id(question)
+            if explicit_order is not None and explicit_order != self._order_id:
+                # Never probe another ID, even when the model suggests it. Keep
+                # the attempt out of bounded model history as well.
+                denied_language = language_hint(question) or ('en' if english_question(question) else 'pt')
+                self._emit({'event': 'scope_decision', 'status': 'shop'})
+                text = ('Order information is unavailable for this session.' if denied_language == 'en' else
+                        'As informações do pedido não estão disponíveis para esta sessão.')
+                return AgentResult('answered', text)
             if self._last_failure and failure_followup(question):
                 self._emit({'event': 'scope_decision', 'status': 'shop'})
                 return self._plain(question, history, failure_message(self._last_failure, language == 'en'))
@@ -285,6 +314,19 @@ class Agent:
                 # the earlier valid conversation or change its bound identity.
                 return AgentResult("out_of_scope" if decision == "outside" else "scope_uncertain",
                                    scope_message(decision, language))
+            if re.search(r"\b(?:cadastro|contatos? do cliente|customer profile|account details)\b", normalize(question)) and re.search(
+                    r"\b(?:endereco|telefone|celular|email|e-mail|address|phone|contact)\b", normalize(question)):
+                return self._plain(question, history,
+                    ('For privacy, I cannot share personal registration details in chat. I can check the status, items, total, and available tracking for the order authorized to this session.' if language == 'en' else
+                     'Por segurança, não compartilho dados pessoais de cadastro pelo chat. Posso consultar o status, os itens, o total e o rastreamento disponível do pedido autorizado nesta sessão.'))
+            # Reuse the secure service's already-authorized, read-only order
+            # record for a same-session detail follow-up such as tracking.
+            if (any(n == 'lookup_order' and r.get('status') == 'ok' for n, r in self._last_results)
+                    and re.search(r'\b(?:tracking|delivery|status|total|rastre|entrega|itens?|produtos?)\b', normalize(question))
+                    and (order_record_followup(question) or product_followup(question))):
+                answer = self._tools.grounded_answer(self._last_fact_question, self._last_results, '')
+                if answer:
+                    return self._plain(question, history, answer)
             # A deictic availability follow-up can reuse the immediately previous
             # complete catalog search; it must not be reconstructed from model memory.
             if re.search(r'\b(?:desses|dessas|these|those)\b', normalize(question)) and re.search(
@@ -350,8 +392,8 @@ class Agent:
                 answer = self._tools.grounded_answer(self._last_fact_question, self._last_results, '')
                 if answer:
                     return self._plain(question, history, answer)
-            if (requested_order_id(question) is None and not order_record_followup(question)
-                    and re.search(r'\b(?:pedido|order|rastre\w*|tracking)\b', normalize(question))):
+            if (requested_order_id(question) is None and
+                    (order_record_followup(question) or re.search(r'\b(?:pedido|order|rastre\w*|tracking)\b', normalize(question)))):
                 question += f'\nPedido {self._order_id}.'
             if not requested_product_ids(question) and product_followup(question):
                 matched_recent = self._recent_named_product_id(question)
@@ -359,7 +401,7 @@ class Agent:
                     question += f'\nProduto ID {matched_recent}.'
             if (not requested_product_ids(question) and self._last_product_ids
                     and product_followup(question)
-                    and re.search(r'\b(?:preco|valor|pix|estoque|disponivel|availability|available|price|cost|stock|promocao|desconto|discount)\b', normalize(question))
+                    and re.search(r'\b(?:preco\w*|valor|pix|pag\w*|estoque|dispon\w*|availability|available|price|cost|stock|promoc\w*|desconto|discount)\b', normalize(question))
                     and not re.search(r'\d|\b(?:pedido|order|todos|todas|all|catalogo|catalog)\b', normalize(question))):
                 if len(self._last_product_ids) == 1:
                     question += f'\nProduto ID {self._last_product_ids[0]}.'
@@ -368,10 +410,22 @@ class Agent:
                 else:
                     names = [self._tools._catalog.get_product(i).name for i in self._last_product_ids]
                     return self._plain(question, history, ('Which instrument do you mean: ' if language == 'en' else 'De qual instrumento você está falando: ') + '; '.join(names) + '?')
+            explicit_unknown_name = re.search(
+                r'\b(?:product|produto|instrument|instrumento)\s+(?!id\b|disponivel\b|available\b|stock\b|estoque\b|preco\b|price\b|que\b|de\b|do\b|da\b)([a-z0-9][\w-]{2,})', normalize(question))
+            has_product_target = bool(requested_product_ids(question) or self._tools._named_product_id(question)
+                                       or self._tools._catalog.category_ids_from_text(question) or explicit_unknown_name
+                                       or catalog_question(question))
+            if (self._tools.required_evidence(question) is None and not has_product_target and not self._last_product_ids
+                    and re.search(r'\b(?:preco\w*|valor|custa|quanto|price|cost|pix|estoque|stock|dispon\w*|available)\b', normalize(question))):
+                return self._plain(question, history,
+                    ('Which instrument do you want to check? Share its name or a detail and I can verify its price or stock.' if language == 'en' else
+                     'Qual instrumento você quer consultar? Se me disser o nome ou uma característica, verifico o preço ou o estoque.'))
             if (not requested_product_ids(question) and self._last_product_ids
                     and re.search(r'compar|\b(?:os dois|ambos|both)\b', normalize(question))):
                 question += '\n' + ', '.join(f'Produto ID {i}' for i in self._last_product_ids)
             retried_response = False
+            retried_advice = False
+            rejected_advice = None
             retry_tool = None
             for request_index in range(self._max_requests):
                 history = memory_exchange(history)
@@ -384,19 +438,35 @@ class Agent:
                 # Keep stored customer text and tool arguments unchanged.
                 model_history = copy.deepcopy(history)
                 model_history[question_index]["content"] = question + f"\n\nPlease respond in {response_language}."
+                if rejected_advice is not None:
+                    model_history.extend([
+                        {'role': 'assistant', 'native': rejected_advice},
+                        {'role': 'user', 'content': 'Make that answer concise: no more than 70 words, answer the question directly, remove unrequested steps and unsupported details.'},
+                    ])
                 schemas = self._tools.schemas
                 required_tool = self._tools.required_evidence(question)
                 if required_tool:
                     schemas = [schema for schema in schemas if schema['name'] == required_tool]
+                elif advisory_question(question):
+                    schemas = []
                 if retry_tool:
                     schemas = [schema for schema in schemas if schema['name'] == retry_tool]
+                advice_style = ""
+                if advisory_question(question):
+                    advice_style = (
+                        "\nGENERAL GUIDANCE TURN: answer the customer's actual question first, in 2-3 short "
+                        "sentences and no more than 70 words unless they explicitly request detail. Avoid headings "
+                        "and bullets unless requested. Use qualified language for general tendencies. Do not invent "
+                        "catalog facts, assume an instrument type, prescribe physical exercises, promise that an "
+                        "instrument will not hurt, or claim one choice is best for everyone. Ask at most one useful "
+                        "follow-up question.\n")
                 try:
                     reply = self._provider.complete(model_history, schemas,
                         f"Respond to the current customer in {response_language}. This overrides the language of earlier turns.\n" + SYSTEM +
                         f"\nTrusted data mode: {mode}.\nCurrent reply language: {response_language}. "
                         "Use this language even if earlier turns or policy excerpts use another language. "
                         "Keep original product names. For policy answers, cite the retrieved section/page "
-                        "even when it only supports an explanation of missing or uncertain information.\n")
+                        "even when it only supports an explanation of missing or uncertain information.\n" + advice_style)
                 except ProviderError as error:
                     if (not retried_response and request_index + 1 < self._max_requests
                             and error.code in {'output_limit','invalid_json','invalid_response','invalid_tool_calls'}):
@@ -409,6 +479,13 @@ class Agent:
                 self._emit({"event": "model_response", "text": reply.text,
                             "calls": [{"name": c.name, "arguments": c.arguments} for c in reply.calls]})
                 if not reply.calls:
+                    if (advisory_question(question) and not retried_advice
+                            and len(re.findall(r'\b[\w-]+\b', reply.text)) > 80):
+                        retried_advice = True
+                        rejected_advice = copy.deepcopy(reply.native)
+                        self._emit({'event': 'provider_retry', 'phase': 'advisory_concision',
+                                    'reason': 'response_too_long'})
+                        continue
                     required = self._tools.required_evidence(question)
                     if current_results and not any(r.get('status') == 'ok' for n, r in current_results):
                         return self._failure('tool_error', language, called, current_results[-1][1].get('error', 'tool_failure'))
@@ -427,7 +504,7 @@ class Agent:
                         message.get('role') == 'tool' and message.get('name') == 'lookup_order'
                         and message.get('result', {}).get('status') == 'ok'
                         for exchange in self._turns for message in exchange))
-                    if not current_results and not advisory_question(question) and not prior_authorized_order:
+                    if not current_results and not prior_authorized_order and not advisory_question(question):
                         return self._failure('unverified', language, called)
                     if not current_results and re.search(
                             r'nao (?:encontr|localiz|exist)|not found|couldn.t find|does not exist|not in (?:the )?catalog',

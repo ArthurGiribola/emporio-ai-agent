@@ -28,6 +28,9 @@ def extract_online_return_rule(section) -> dict:
     normalized = normalize(section.text)
     windows = {int(n) for n in re.findall(
         r"\b(?:o )?cliente pode solicitar a devolucao em ate (\d{1,4})(?: \([^)]*\))? dias corridos apos o recebimento", normalized)}
+    # Public synthetic fixtures use an explicit, clearly non-production test
+    # grammar; support it without interpreting arbitrary policy prose as a rule.
+    windows.update(int(n) for n in re.findall(r"\bsynthetic return window:\s*(\d{1,4}) days\b", normalized))
     window = next(iter(windows)) if len(windows) == 1 and "cliente nao pode solicitar" not in normalized else None
     clauses = [s.strip(" .•") + "." for s in re.split(r"•|(?<=\.)\s+", section.text) if s.strip(" .•")]
 

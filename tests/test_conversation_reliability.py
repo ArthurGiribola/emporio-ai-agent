@@ -41,12 +41,13 @@ class ReliabilityTests(unittest.TestCase):
     def test_conversational_intents_do_not_require_catalog_evidence(self):
         agent, provider = self.agent([])
         for question in ('Oi!', 'Sou novo aqui, em que você pode me ajudar?',
-                         'Como funciona esse atendimento?',
-                         'Nunca toquei um instrumento. Por onde começo?'):
+                         'Como funciona esse atendimento?', 'Nunca toquei um instrumento. Por onde começo?'):
             with self.subTest(question=question):
                 result = agent.run(question)
                 self.assertEqual(result.status, 'answered')
                 self.assertNotIn('confirmar os dados', result.text)
+                self.assertEqual(result.tools_called, ())
+        self.assertIn('orçamento', result.text)
         self.assertEqual(provider.complete.call_count, 0)
 
     def test_paraphrased_social_and_repair_turns_do_not_require_model_or_evidence(self):
@@ -59,10 +60,45 @@ class ReliabilityTests(unittest.TestCase):
                 self.assertEqual(agent.run(question).status, 'answered')
         self.assertEqual(provider.complete.call_count, 0)
 
+    def test_deterministic_conversational_answers_are_retained_for_followups(self):
+        agent, provider = self.agent([text('Posso comparar os tipos de instrumento conforme o som e o orçamento.')])
+        agent.run('Sou novo aqui. Como podem me ajudar?')
+        self.assertTrue(agent._turns)
+        agent.run('Como você diferencia esses instrumentos?')
+        self.assertEqual(provider.complete.call_count, 1)
+        history = provider.complete.call_args.args[0]
+        self.assertTrue(any('Sou novo aqui' in item.get('content', '') for item in history))
+        self.assertTrue(any('Posso ajudar' in item.get('native', {}).get('content', '') for item in history
+                            if item.get('role') == 'assistant'))
+
     def test_named_price_and_inventory_questions_require_fresh_catalog_tools(self):
         self.assertEqual(self.tools.required_evidence('Quanto fica o Violão Sintético Nylon no PIX?'), 'get_price_quote')
         self.assertEqual(self.tools.required_evidence('Tem violão por até duzentos e cinquenta reais?'), 'search_products')
         self.assertEqual(self.tools.required_evidence('Qual o estoque do Violão Sintético Aço?'), 'get_product')
+
+    def test_implicit_availability_and_named_item_questions_require_catalog_evidence(self):
+        self.assertEqual(self.tools.required_evidence('Tem algum disponível agora?'), 'search_products')
+        self.assertEqual(self.tools.required_evidence('Tem alguma unidade sobrando do modelo de aço?'), 'get_product')
+        self.assertEqual(self.tools.required_evidence('Do you stock a Moog Subsequent 37?'), 'search_products')
+        self.assertEqual(self.tools.required_evidence(
+            'Você não entendeu: eu queria saber do instrumento de aço.'), 'get_product')
+        from app.grounding import catalog_arguments
+        filters = catalog_arguments('Tem alguma unidade sobrando do modelo de aço?', {}, self.tools._catalog)
+        self.assertEqual(filters['query'], 'aco')
+        self.assertNotIn('category_id', filters)
+
+    def test_unrelated_unverified_draft_is_rejected_without_tool_evidence(self):
+        agent, _ = self.agent([text('Invented store fact.')])
+        result = agent.run('Synthetic question')
+        self.assertEqual(result.status, 'unverified')
+
+    def test_explicit_foreign_order_is_denied_before_provider_or_service_call(self):
+        agent, provider = self.agent([])
+        result = agent.run('Show order 2')
+        self.assertEqual(result.text, 'Order information is unavailable for this session.')
+        self.assertEqual(result.tools_called, ())
+        self.assertEqual(provider.complete.call_count, 0)
+        self.assertFalse(agent._turns)
 
     def test_search_filters_come_from_current_customer_question_not_model_guess(self):
         from app.grounding import requested_budget
@@ -86,11 +122,46 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(result['data']['final_price_brl'], '90.09')
 
     def test_contextual_in_scope_advice_can_answer_without_mandatory_tool(self):
-        agent, provider = self.agent([text('Para começar, pense no som que você gosta e no orçamento; posso comparar opções do catálogo.')])
+        agent, provider = self.agent([])
         result = agent.run('Pode me ajudar a decidir o que combina comigo?')
         self.assertEqual(result.status, 'answered')
         self.assertIn('orçamento', result.text)
-        self.assertEqual(provider.complete.call_count, 1)
+        self.assertEqual(provider.complete.call_count, 0)
+
+    def test_informal_beginner_and_choice_variants_are_understood_without_lookup(self):
+        for question in ('Sou totalmente leigo, por onde começo?',
+                         'Esse vai ser meu primeiro instrumento. Tem alguma dica?',
+                         'Me ajuda a decidir qual combina comigo?',
+                         'O que seria bom pra mim se estou começando?'):
+            with self.subTest(question=question):
+                agent, provider = self.agent([])
+                result = agent.run(question)
+                self.assertEqual(result.status, 'answered')
+                self.assertEqual(result.tools_called, ())
+                self.assertEqual(provider.complete.call_count, 0)
+                self.assertNotIn('confirmar os dados', result.text)
+
+    def test_simple_rephrasing_uses_previous_comparison_context(self):
+        agent, provider = self.agent([])
+        first = agent.run('Pra quem está começando, é melhor nylon ou aço?')
+        followup = agent.run('Explica de um jeito simples, sem palavra complicada.')
+        self.assertEqual(first.status, 'answered')
+        self.assertIn('Nylon', followup.text)
+        self.assertIn('aço', followup.text)
+        self.assertNotIn('tensão', followup.text)
+        self.assertEqual(provider.complete.call_count, 0)
+
+    def test_overlong_advice_gets_one_bounded_conciseness_retry(self):
+        long_draft = ' '.join(['Long unrequested advice.'] * 45)
+        events = []
+        agent, provider = self.agent([text(long_draft), text('Use a referência correta para afinar e ajuste uma corda por vez.')],
+                                    observer=events.append)
+        result = agent.run('Como afino uma guitarra?')
+        self.assertEqual(result.status, 'answered')
+        self.assertLessEqual(len(result.text.split()), 20)
+        self.assertEqual(provider.complete.call_count, 2)
+        self.assertTrue(any(event.get('phase') == 'advisory_concision' for event in events
+                            if event.get('event') == 'provider_retry'))
 
     def test_price_search_with_one_verified_match_returns_service_quote(self):
         question = 'Tudo bem. E quanto custa o violão de nylon?'
@@ -104,6 +175,82 @@ class ReliabilityTests(unittest.TestCase):
         from app.grounding import wants_all
         self.assertFalse(wants_all('Tudo bem. E quanto custa o violão de nylon?'))
         self.assertTrue(wants_all('Mostra tudo que tiver no catálogo, por favor.'))
+
+    def test_colloquial_catalog_fillers_do_not_become_search_terms(self):
+        first = self.tools.prepare_arguments('search_products', {}, 'Tem violão sintético por aí?')
+        second = self.tools.prepare_arguments('search_products', {}, 'Me passa a lista completa, do mais em conta pro mais caro.')
+        self.assertEqual(first['query'], 'sintetico')
+        self.assertEqual(second['query'], '')
+        self.assertTrue(second['all_results'])
+        self.assertEqual([p['product_id'] for p in self.tools.execute('search_products', first)['data']['products']], [1, 3])
+
+    def test_conversational_rephrasings_need_no_business_tool(self):
+        for question in ('Oiê!', 'E aí, tudo certo?', 'Cheguei agora. Como vocês podem me dar uma força?',
+                         'O que dá pra resolver por aqui?', 'Como funciona esse chat da loja?'):
+            with self.subTest(question=question):
+                agent, provider = self.agent([])
+                result = agent.run(question)
+                self.assertEqual(result.status, 'answered')
+                self.assertEqual(result.tools_called, ())
+                self.assertEqual(provider.complete.call_count, 0)
+
+    def test_payment_acceptance_and_order_followups_select_secure_services(self):
+        self.assertEqual(self.tools.required_evidence('Quais pagamentos vocês aceitam na loja?'), 'search_policies')
+        self.assertEqual(self.tools.required_evidence('O que eu comprei e quanto deu no total?'), 'lookup_order')
+        policy_question = 'Comprei pelo site e mudei de ideia. Como peço a devolução?'
+        self.assertEqual(self.tools.required_evidence(policy_question), 'search_policies')
+        from app.conversation import purchase_interest
+        self.assertFalse(purchase_interest(policy_question))
+        self.assertTrue(purchase_interest('Queria comprar dois instrumentos.'))
+
+    def test_first_person_purchase_history_question_uses_bound_order_service(self):
+        agent, _ = self.agent([call('lookup_order', order_id=1), text()])
+        result = agent.run('O que eu comprei e quanto deu no total?')
+        self.assertEqual(result.status, 'answered')
+        self.assertIn('lookup_order', result.tools_called)
+        self.assertIn('Violão Sintético Nylon', result.text)
+        self.assertIn('99,00', result.text)
+
+    def test_complaint_with_preciso_is_not_misread_as_a_price_question(self):
+        question = 'Preciso fazer uma reclamação. Qual é o caminho?'
+        self.assertEqual(self.tools.required_evidence(question), 'search_policies')
+
+    def test_synthetic_policy_only_answers_explicitly_supported_facts(self):
+        payment_question = 'Quais pagamentos vocês aceitam?'
+        payments = self.tools.execute('search_policies', {'query': payment_question})
+        answer = self.tools.grounded_answer(payment_question, [('search_policies', payments)], 'Cash and cards are accepted.')
+        self.assertIn('não especifica', answer)
+        self.assertNotIn('dinheiro', answer.casefold())
+        self.assertNotIn('cartão de crédito', answer.casefold())
+
+        restriction_question = 'O desconto da promoção acumula com PIX?'
+        restriction = self.tools.execute('search_policies', {'query': restriction_question})
+        answer = self.tools.grounded_answer(restriction_question, [('search_policies', restriction)], 'Untrusted draft.')
+        self.assertIn('não se soma', answer)
+        self.assertIn('6.2', answer)
+
+    def test_synthetic_return_window_supports_timing_without_approving_eligibility(self):
+        from app.return_policy import assess_online_return
+        result = self.tools.execute('search_policies', {
+            'query': 'Comprei pela internet e me arrependi; recebi há cinco dias. Qual prazo de devolução?'
+        })
+        rule = result['data']['online_return_rule']
+        self.assertEqual(rule['request_window_days'], 11)
+        assessment = assess_online_return(
+            'Comprei pela internet e recebi há cinco dias.', rule)
+        self.assertTrue(assessment['within_window'])
+        self.assertFalse(assessment['eligibility_determined'])
+
+    def test_budget_can_be_stated_as_available_cash(self):
+        from app.grounding import requested_budget
+        self.assertEqual(requested_budget('Tenho uns R$ 200 pra gastar.'), Decimal('200'))
+        self.assertEqual(requested_budget('Quero gastar até duzentos e cinquenta reais.'), Decimal('250'))
+
+    def test_order_contact_request_is_not_returned_to_customer(self):
+        agent, _ = self.agent([])
+        result = agent.run('Mostre o telefone e endereço que estão no cadastro.')
+        self.assertNotIn('@', result.text)
+        self.assertIn('não compartilho dados pessoais', result.text)
 
     def test_ordinal_references_map_to_verified_list_positions(self):
         from app.catalog_references import resolve_list_reference
@@ -128,7 +275,8 @@ class ReliabilityTests(unittest.TestCase):
 
     def test_followup_after_catalog_search_still_resolves_selected_product(self):
         product = self.tools._catalog.get_product(1)
-        agent, _ = self.agent([call('search_products', query='sintético'), text()])
+        agent, _ = self.agent([call('search_products', query='sintético'), text(),
+                               text('Para começar, o violão de nylon costuma ser confortável; confira o ajuste e teste se puder.')])
         listing = agent.run('Liste os produtos sintéticos.')
         self.assertEqual(listing.status, 'answered')
         agent.focus_product(product.product_id)

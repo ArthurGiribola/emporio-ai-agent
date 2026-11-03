@@ -42,23 +42,40 @@ def conversation_question(question):
 def conversational_intent(question):
     """Recognize ordinary rapport and exploratory help that need no tool facts."""
     t = normalize(question)
-    if re.fullmatch(r'(?:oi|ola|hello|hi|hey|bom dia|boa tarde|boa noite)(?:[,!? ]+(?:tudo bem|tudo certo|como vai))?[.!?, ]*', t):
+    if re.fullmatch(r'(?:oi(?:e+)?|ola|hello|hi|hey|e ai|bom dia|boa tarde|boa noite|beleza)(?:[,!? ]+(?:tudo bem|tudo certo|como vai|beleza))?[.!?, ]*', t):
         return 'greeting'
     if re.search(r'\b(?:em que (?:voce|posso) (?:me )?ajudar|que tipo de ajuda|como podem me ajudar|'
                  r'o que (?:voce|voces|a loja) (?:pode|podem|faz|fazem|atende|atendem)|'
+                 r'cheguei agora|primeira vez (?:aqui|por aqui)|como (?:voces|voce) podem me dar uma forca|'
+                 r'o que da pra (?:fazer|resolver) por aqui|no que (?:voces|voce) (?:ajudam|ajuda)|'
                  r'what can you help|how can you help|what help can i get|'
-                 r'como funciona (?:esse|o) atendimento|how does (?:this|your) service work|'
+                 r'como funciona (?:esse|o) (?:atendimento|chat)|how does (?:this|your) service work|'
                  r'sou novo|sou nova|acabei de chegar|new here|first time here)\b', t):
         return 'capabilities'
-    if re.search(r'\b(?:nunca toquei|nunca toque|never played|beginner|iniciante|'
-                 r'nao entendo nada de musica|nao entendo de instrumentos|aprender.*do zero|'
-                 r'por onde comec|where should i start|getting started|need help choosing)\b', t):
+    objective = re.search(r'\b(?:preco|valor|custa|quanto|estoque|stock|disponivel|available|pix|'
+                          r'promoc\w*|desconto|politic\w*|garanti\w*|devol\w*|reembols\w*|pedido|order)\b'
+                          r'|\b(?:produto|product|item)\s*(?:id\s*)?\d+\b', t)
+    beginner = re.search(r'\b(?:nunca (?:toquei|toque|encostei)|never played|beginner|iniciante|'
+                         r'nao entendo nada de musica|nao entendo de instrumentos|nao manjo nada|'
+                         r'leig\w*|sou zero|zero a esquerda|primeiro instrumento|'
+                         r'(?:pra|para|for) quem.{0,25}(?:aprend\w*|comec\w*|iniciante|beginner)|'
+                         r'(?:comec|aprend\w*|experienc\w*).{0,30}(?:zero|nada)|do zero)\b', t)
+    if beginner and not objective:
+        return 'exploration'
+    open_advice = (re.search(r'\b(?:me ajudar a escolher|ajuda(?:r)? (?:a|pra|para) escolher|'
+                             r'me ajuda(?:r)? a decidir|me orientar|combina comigo|'
+                             r'o que seria bom pra mim|qual seria ideal pra mim|'
+                             r'help me choose|what suits me|what would suit me)\b', t)
+                   and not objective)
+    if open_advice:
         return 'exploration'
     if re.search(r'\b(?:nao (?:encontrei|achei|localizei)|cant find|could not find)\b.*\b(?:produto|instrumento|product|instrument|item)\b', t):
         return 'product_search_help'
     if (re.search(r'\b(?:nao foi isso|nao era isso|nao entendeu|nao respondeu|'
-                 r'nao resolveu|pode explicar melhor|that is not what|you misunderstood|'
-                 r'that did not answer|can you clarify|explic\w* de outro jeito)\b', t)
+                 r'nao resolveu|nao ficou claro|nao entendi|pegou outra coisa|'
+                 r'fiquei na duvida|ainda estou na duvida|pode explicar melhor|'
+                 r'that is not what|you misunderstood|that did not answer|can you clarify|'
+                 r'explic\w* de outro jeito)\b', t)
             and not re.search(r'\b(?:viol\w*|instrument\w*|guit\w*|ukulel\w*|baix\w*|aco|nylon|preco|estoque|pedido|garantia|devolucao|pix|produto\s+id)\b', t)):
         return 'repair'
     if re.fullmatch(r'(?:valeu|obrigado|obrigada|muito obrigado|muito obrigada|thanks|thank you|cheers)'
@@ -67,10 +84,39 @@ def conversational_intent(question):
     return None
 
 
+def exploration_response(question, *, english=False):
+    """Short general guidance for beginner/discovery intent, with no store claims."""
+    t = normalize(question)
+    if re.search(r'\bnylon\b', t) and re.search(r'\b(?:aco|steel)\b', t):
+        return ("Nylon costuma ter um toque mais suave; aço costuma ter som mais brilhante e maior tensão. Nenhum é melhor para todo mundo: pense no estilo que você quer tocar e no conforto ao experimentar." if not english else
+                "Nylon strings often feel softer, while steel strings often sound brighter and have more tension. Neither is best for everyone; consider the music you want to play and what feels comfortable.")
+    if re.search(r'\b(?:combina comigo|me ajuda(?:r)? a decidir|me orientar|'
+                 r'o que seria bom pra mim|qual seria ideal pra mim|help me choose|what suits me|what would suit me)\b', t):
+        return ("Claro. Para sugerir algo que combine com você, ajuda saber o estilo de música que gosta, seu orçamento e se pretende tocar sozinho ou em grupo. Qual estilo você curte?" if not english else
+                "Sure. To suggest something that fits, it helps to know the music you enjoy, your budget, and whether you plan to play alone or with others. What style do you like?")
+    if re.search(r'\b(?:nao manjo nada|tem problema|leig\w*|sou zero|zero a esquerda|'
+                 r'primeiro instrumento|no experience|beginner)\b', t):
+        return ("Não tem problema começar do zero. Pense no som que você gosta, no conforto e no orçamento; posso comparar opções reais do catálogo quando você quiser. Que estilo de música você curte?" if not english else
+                "Starting from zero is completely fine. Think about the sound you like, comfort, and budget; I can compare actual catalog options when you are ready. What kind of music do you enjoy?")
+    return ("Começar do zero é normal. A escolha depende do som que você gosta, do conforto e do orçamento; posso comparar opções reais do catálogo. Você prefere explorar instrumentos de cordas, teclas ou outro tipo?" if not english else
+            "Starting from zero is normal. Your choice depends on the sound you like, comfort, and budget; I can compare real catalog options. Would you like to explore strings, keyboards, or another kind of instrument?")
+
+
+def simplify_request(question):
+    """Identify a request to restate the immediately discussed point more simply."""
+    t = normalize(question)
+    return bool(re.search(r'\b(?:explica|explique|fala|fale|diz|diga|resume|resuma|simplifica|simplifique)\b'
+                          r'.{0,50}\b(?:simples|facil|claro|sem complic|sem termo|sem palavra|'
+                          r'pra leigo|para leigo|de um jeito|in plain|simple terms|plain english)\b', t)
+                or re.search(r'\b(?:eli5|em palavras simples|em termos simples|mais simples por favor)\b', t))
+
+
 def purchase_interest(question):
     t = normalize(question)
-    return bool(re.search(r'\b(?:comprar|adquirir|levar|separar|buy|purchase|take)\b|'
+    return bool(re.search(r'\b(?:comprar|compro|compraria|adquirir|adquiro|levar|levo|separ\w*|pegar|pego|buy|purchase|take)\b|'
                           r'\b(?:pensando|considerando|looking|planning)\b.*\b(?:viol|instrument|product|guit|music)\w*', t) or
+                (re.search(r'\b(?:namorando a ideia|thinking about|considerando a ideia)\b', t)
+                 and re.search(r'\b(?:viol\w*|instrument\w*|product|guit\w*|music)\b', t)) or
                 (re.search(r'\b\d+\s+(?:unidades?|units?)\b', t)
                  and re.search(r'\b(?:quero|gostaria|agora|mude|troque|desejo|want|change|make)\b', t)))
 
@@ -84,7 +130,10 @@ def advisory_question(question):
     return bool(re.search(r'\b(?:help me choose|help me decide|what suits me|recommend|recommendation|suggestion|'
                           r'good fit|where should i start|beginner advice|advice for|which should i learn|'
                           r'me ajudar a escolher|me ajudar a decidir|combina comigo|me orientar|qual instrumento devo|'
-                          r'o que voce recomenda|dica para comecar|por onde comecar)\b', t)
+                          r'o que voce recomenda|dica para comecar|por onde comecar|por qual lado comecar|'
+                          r'explica.*simples|sem palavra complicada|melhor|nao manjo nada|tem problema|'
+                          r'zero experiencia|sem experiencia|nunca toquei|nunca encostei|getting started|'
+                          r'no experience|just starting|beginner|which is better)\b', t)
                 or (re.search(r'\b(?:how|como|what|o que|why|por que|explain|explique|difference|diferenca)\b', t)
                     and re.search(r'\b(?:instrument\w*|viol\w*|guit\w*|ukulel\w*|baix\w*|keyboard|teclado|midi|strings?|cordas?|nylon|steel|aco|tocar|play|tune|afinar)\b', t)))
 
@@ -97,12 +146,16 @@ def explanation_followup(question):
 def product_followup(question):
     """Only pronouns/elliptical questions inherit a selection, never a new name."""
     t = normalize(question)
-    if re.search(r'\b(?:ele|ela|dele|dela|esse|este|isso|it|its|that|this|ambos|both)\b|\bos dois\b', t):
+    if (re.search(r'\b(?:ele|ela|dele|dela|deles|delas|esse|essa|este|esta|isso|disso|daquele|daquela|'
+                  r'dessa|desse|it|its|that|this|both)\b|\bos dois\b', t)
+            or (re.match(r'^(?:e|ah e|voltando|sobre)\b', t)
+                and re.search(r'\b(?:pre\w*|valor|custa|quanto|pix|pag\w*|estoque|disponivel|stock|available)\b', t))):
         return True
     words = set(re.findall(r'\w+', t))
-    return bool(words) and words <= set(('qual e o a preco valor quanto custa estoque tem esta disponivel '
-        'no pix pagando com desconto price cost stock available availability and what is the how much '
-        'does in on by using payment inclui promocao na promocional pagar se for de do da unitario').split())
+    return bool(words) and words <= set(('qual e o a preco precinho precos valor quanto fica sai custa estoque tem esta disponivel '
+        'no pix pagando pagarei pagando com desconto price cost stock available availability and what is the how much '
+        'does in on by using payment inclui promocao na promocional pagar se for de do da unitario normal '
+        'deles delas desse dessa aquele aquela primeiro primeira').split())
 
 
 def failure_followup(question):
