@@ -435,9 +435,13 @@ $env:PYTHONIOENCODING = "utf-8"
 
 ## AI assistance and submission status
 
-Codex assisted with data inspection, architecture, implementation, tests, and
-English documentation. Reported tests were actually executed; mocked responses
-are not presented as real LLM runs or customer transcripts.
+AI coding assistants were used throughout development: OpenAI Codex assisted
+with data inspection, architecture, implementation, tests, and English
+documentation; Anthropic Claude assisted with an independent audit of the
+conversational orchestration, the structured catalog-search redesign, and the
+multi-turn task-completion evaluation. Design decisions, review, and acceptance
+of every change remained with the author. Reported tests were actually executed;
+mocked responses are not presented as real LLM runs or customer transcripts.
 
 Original CSV/PDF resources, secrets, virtual environments, and build output are
 excluded from Git. A GitHub remote exists and already contains earlier commits;
