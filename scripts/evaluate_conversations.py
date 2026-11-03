@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -149,7 +150,12 @@ def main():
                     'forbidden_claims': not any(term.casefold() in visible_text.casefold() for term in case.get('must_not_include', [])),
                     'no_purchase_claim': not case.get('must_not_claim_purchase') or not any(
                         term in answer.text.casefold() for term in ('pedido criado', 'compra realizada', 'order created')),
+                    'no_internal_jargon': not re.search(
+                        r'\b(?:snapshot|list_price_brl|tool_call|tool call|data retrieval|database field|'
+                        r'retrieval system|function calling)\b', visible_text, re.IGNORECASE),
                 }
+                if case.get('max_answer_words') is not None:
+                    checks['concise'] = len(re.findall(r'\b[\w-]+\b', answer.text)) <= case['max_answer_words']
                 expected_safe_tool_error = expected_status == 'tool_error' and status == 'tool_error'
                 passed = all(checks.values()) and (not answer.error or expected_safe_tool_error)
                 scenario_pass &= passed
