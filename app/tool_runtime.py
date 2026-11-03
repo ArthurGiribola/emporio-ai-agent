@@ -252,10 +252,29 @@ class ToolRuntime:
                     lines.append(f"**{product['name']}**\n\nCategoria: {product['category']}. Preço por unidade: {price}. Estoque registrado: {product['recorded_stock_quantity']} unidades. {available}.")
                 lines.extend(product_issues(source, english=english_question(question)))
             answer = '\n\n'.join(lines)
+            quantity = requested_quantity(question)
+            product = next(iter(products.values())) if len(products) == 1 else None
+            stock = product.get('recorded_stock_quantity') if product else None
+            if quantity is not None and product is not None:
+                if type(stock) is int:
+                    if english_question(question):
+                        note = (f'You mentioned {quantity} units; the catalog records {stock}, so it does not cover that amount and '
+                                f'{quantity - stock} more would be needed. This lookup does not reserve stock or create an order.'
+                                if quantity > stock else
+                                f'The catalog records {stock} units, covering the {quantity} mentioned, with {stock - quantity} left '
+                                'if stock does not change before purchase. This lookup does not reserve stock or create an order.')
+                    else:
+                        note = (f'Você mencionou {quantity} unidades; o cadastro registra {stock}, então não cobre essa quantidade; '
+                                f'faltariam {quantity - stock} e não consigo confirmar essa quantidade completa. Esta consulta não reserva o estoque nem cria um pedido.'
+                                if quantity > stock else
+                                f'O cadastro registra {stock} unidades, cobre as {quantity} mencionadas e sobraria {stock - quantity}, '
+                                'se o estoque não mudar até a compra. Esta consulta não reserva o estoque nem cria um pedido.')
+                else:
+                    note = ('The catalog has no recorded stock quantity, so I cannot confirm that amount. This lookup did not create an order.'
+                            if english_question(question) else
+                            'O cadastro não informa a quantidade em estoque, então não consigo confirmar esse total. Esta consulta não criou um pedido.')
+                return answer + '\n\n' + note
             if purchase_interest(question):
-                quantity = requested_quantity(question)
-                product = next(iter(products.values())) if len(products) == 1 else None
-                stock = product.get('recorded_stock_quantity') if product else None
                 if quantity is not None and type(stock) is int:
                     if english_question(question):
                         note = (f'You mentioned {quantity} units, but the catalog records only {stock} in stock; '

@@ -10,8 +10,8 @@ from app.synthetic import SyntheticTools
 from app.tool_runtime import ToolRuntime
 from app.scope import assess_scope, scope_message, language_hint
 from app.catalog_references import resolve_list_reference
-from app.grounding import catalog_question, requested_product_ids, requested_order_id, order_record_followup, wants_all, english_question
-from app.return_policy import online_return_question, elapsed_followup_days
+from app.grounding import catalog_question, requested_product_ids, requested_order_id, order_record_followup, order_items_followup, wants_all, english_question
+from app.return_policy import online_return_question, elapsed_followup_days, elapsed_receipt_days
 from app.catalog_view import CatalogView, build_catalog_view
 from app.conversation import (memory_exchange, assistant_text, conversation_question,
     purchase_interest, advisory_question, exploration_response, simplify_request,
@@ -274,19 +274,22 @@ class Agent:
                 previous_answers.append('Verified instruments discussed or selected in this session: ' + names)
             recent_policy = any(n == 'search_policies' and r.get('status') == 'ok'
                                 for n, r in self._last_results)
-            policy_time_followup = (recent_policy and bool(re.search(
-                r'\b\d+\s+(?:dias?|days?)\b|\b(?:cinco|sete|five|seven) dias?\b', normalize(question)))
-                and not online_return_question(question))
+            elapsed_days = elapsed_receipt_days(question)
+            if elapsed_days is None:
+                elapsed_days = elapsed_followup_days(question)
+            policy_time_followup = (recent_policy and online_return_question(self._last_fact_question)
+                and elapsed_days is not None and not online_return_question(question))
             if policy_time_followup:
                 followup = question
-                question = self._last_fact_question + '\nComplemento do cliente: ' + followup
-                prior_answer = previous_answers[-1] if previous_answers else ''
-                elapsed = elapsed_followup_days(followup)
-                if (elapsed is not None and online_return_question(self._last_fact_question)
-                        and re.search(r'quantos dias corridos se passaram desde o recebimento', normalize(prior_answer))):
-                    # The previous answer explicitly asked for days since receipt;
-                    # anchor this short reply before deterministic policy arithmetic.
-                    question += f'\nContexto da resposta anterior: recebimento há {elapsed} dias corridos.'
+                policy_question = re.split(
+                    r'\n(?:Complemento do cliente:|Contexto da resposta anterior:)',
+                    self._last_fact_question, maxsplit=1)[0]
+                question = policy_question + '\nComplemento do cliente: ' + followup
+                elapsed_followup = elapsed_followup_days(followup)
+                if elapsed_followup is not None:
+                    # A short elapsed-day reply inherits receipt context only
+                    # from this already established online-return discussion.
+                    question += f'\nContexto da resposta anterior: recebimento há {elapsed_followup} dias corridos.'
                 previous_questions.append(self._last_fact_question)
                 previous_answers.append('The customer is asking a follow-up about the retrieved store policy.')
             # A question about the source of the immediately preceding policy answer
@@ -322,6 +325,14 @@ class Agent:
                 # the earlier valid conversation or change its bound identity.
                 return AgentResult("out_of_scope" if decision == "outside" else "scope_uncertain",
                                    scope_message(decision, language))
+            has_authorized_order_context = any(
+                name == 'lookup_order' and result.get('status') == 'ok'
+                and result.get('data', {}).get('status') == 'available'
+                for name, result in self._last_results)
+            if order_items_followup(question) and not has_authorized_order_context:
+                return self._plain(question, history,
+                    'Are you asking about the order authorized for this session?' if language == 'en' else
+                    'Você está perguntando sobre o pedido autorizado desta sessão?')
             if re.search(r"\b(?:cadastro|contatos? do cliente|customer profile|account details)\b", normalize(question)) and re.search(
                     r"\b(?:endereco|telefone|celular|email|e-mail|address|phone|contact)\b", normalize(question)):
                 return self._plain(question, history,
@@ -329,9 +340,9 @@ class Agent:
                      'Por segurança, não compartilho dados pessoais de cadastro pelo chat. Posso consultar o status, os itens, o total e o rastreamento disponível do pedido autorizado nesta sessão.'))
             # Reuse the secure service's already-authorized, read-only order
             # record for a same-session detail follow-up such as tracking.
-            if (any(n == 'lookup_order' and r.get('status') == 'ok' for n, r in self._last_results)
-                    and re.search(r'\b(?:tracking|delivery|status|total|rastre|entrega|itens?|produtos?)\b', normalize(question))
-                    and (order_record_followup(question) or product_followup(question))):
+            if (has_authorized_order_context
+                    and re.search(r'\b(?:tracking|delivery|status|total|rastre|entrega|itens?|produtos?|instrumentos?)\b', normalize(question))
+                    and (order_record_followup(question) or order_items_followup(question) or product_followup(question))):
                 answer = self._tools.grounded_answer(self._last_fact_question, self._last_results, '')
                 if answer:
                     return self._plain(question, history, answer)

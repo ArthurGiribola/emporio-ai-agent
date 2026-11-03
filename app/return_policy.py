@@ -58,6 +58,7 @@ def elapsed_receipt_days(question: str) -> int | None:
         return None
     values = re.findall(r"(?:depois de|apos|ha) (\d{1,4}) dias?(?: corridos)? (?:do|de|desde o) recebimento", text)
     values += re.findall(r"(?:recebi|recebido|recebimento) (?:ha|faz|fazem) (\d{1,4}) dias?\b(?! uteis)", text)
+    values += re.findall(r"\b(?:chegou|chegaram) (?:ha|faz|fazem) (\d{1,4}) dias?\b(?! uteis)", text)
     values = {int(value) for value in values}
     return next(iter(values)) if len(values) == 1 else None
 

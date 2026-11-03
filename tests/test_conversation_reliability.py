@@ -114,6 +114,28 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual([p['product_id'] for p in results['products']], [1, 3])
         self.assertEqual(requested_budget('Tem violão por até duzentos e cinquenta reais?'), Decimal('250'))
 
+    def test_demo_mode_and_availability_phrases_do_not_pollute_catalog_query(self):
+        cases = (
+            'Mostra todos os violões do catálogo de demonstração, inclusive os que estão sem estoque.',
+            'Liste todos os violões de demonstração, incluindo os indisponíveis.',
+        )
+        for question in cases:
+            with self.subTest(question=question):
+                args = self.tools.prepare_arguments('search_products', {
+                    'query': 'wrong model filter', 'category_id': 99, 'all_results': False,
+                    'available_only': True}, question)
+                self.assertEqual(args['query'], '')
+                self.assertEqual(args['category_id'], 1)
+                self.assertTrue(args['all_results'])
+                self.assertFalse(args['available_only'])
+                data = self.tools.execute('search_products', args)['data']
+                self.assertEqual([row['product_id'] for row in data['products']], [1, 2, 3])
+
+        # Contextual mode stripping must not remove a meaningful model name.
+        args = self.tools.prepare_arguments('search_products', {},
+            'Liste todos os instrumentos do catálogo de demonstração com o modelo Demo Drive.')
+        self.assertEqual(args['query'], 'demo drive')
+
     def test_exact_product_name_overrides_invalid_model_identifier(self):
         question = 'Quanto fica o Violão Sintético Nylon no PIX?'
         arguments = self.tools.prepare_arguments('get_price_quote', {'product_id': 999, 'payment_method': 'list'}, question)
@@ -351,6 +373,84 @@ class ReliabilityTests(unittest.TestCase):
         result = agent.run('E se já passaram cinco dias?')
         self.assertEqual(result.status, 'answered')
         self.assertIn('search_policies', result.tools_called)
+
+    def test_policy_receipt_followups_reuse_shared_number_parser_and_anchor_to_prior_policy(self):
+        from app.return_policy import elapsed_receipt_days
+        self.assertEqual(elapsed_receipt_days('A encomenda chegou há nove dias.'), 9)
+        self.assertEqual(elapsed_receipt_days('O pacote chegou faz 7 dias.'), 7)
+        self.assertEqual(elapsed_receipt_days('Recebi há nove dias.'), 9)
+
+        events = []
+        replies = [call('search_policies', query='devolução online'), text(),
+                   call('search_policies', query='devolução online nove dias'), text(),
+                   call('search_policies', query='devolução online sete dias'), text()]
+        agent, _ = self.agent(replies, observer=events.append)
+        agent.run('Comprei pela internet e me arrependi. Qual é o prazo para pedir devolução?')
+        nine_days = agent.run('A encomenda chegou há nove dias; ainda cabe dentro do prazo?')
+        self.assertEqual(nine_days.status, 'answered')
+        self.assertIn('9 dias após o recebimento estão dentro dos 11 dias', nine_days.text)
+        assessment = [event['result']['data']['online_return_assessment'] for event in events
+                      if event.get('event') == 'tool_result' and event.get('name') == 'search_policies'][-1]
+        self.assertEqual(assessment['elapsed_days'], 9)
+        self.assertIs(assessment['within_window'], True)
+
+        seven_days = agent.run('E se já passaram sete dias?')
+        self.assertEqual(seven_days.status, 'answered')
+        self.assertIn('search_policies', seven_days.tools_called)
+        assessment = [event['result']['data']['online_return_assessment'] for event in events
+                      if event.get('event') == 'tool_result' and event.get('name') == 'search_policies'][-1]
+        self.assertEqual(assessment['elapsed_days'], 7)
+
+    def test_order_instrument_followup_uses_only_prior_authorized_order_evidence(self):
+        from app.grounding import order_items_followup
+        for question in ('E qual instrumento veio nele?', 'Quais instrumentos vieram nesse pedido?',
+                         'Qual instrumento está registrado nele?'):
+            with self.subTest(question=question):
+                self.assertTrue(order_items_followup(question))
+        agent, provider = self.agent([call('lookup_order', order_id=1), text()])
+        first = agent.run('Qual é o status do meu pedido?')
+        self.assertEqual(first.status, 'answered')
+        calls_before_followup = provider.complete.call_count
+
+        result = agent.run('E qual instrumento veio nele?')
+
+        self.assertEqual(result.status, 'answered')
+        self.assertIn('Violão Sintético Nylon', result.text)
+        self.assertEqual(result.tools_called, ())  # Reuses the authorized service result from this session.
+        self.assertEqual(provider.complete.call_count, calls_before_followup)
+
+    def test_order_instrument_reference_without_order_context_asks_clarification(self):
+        agent, provider = self.agent([])
+        result = agent.run('E qual instrumento veio nele?')
+        self.assertEqual(result.status, 'answered')
+        self.assertIn('pedido', result.text.casefold())
+        self.assertEqual(provider.complete.call_count, 0)
+
+    def test_denied_foreign_order_does_not_create_reusable_order_context(self):
+        agent, provider = self.agent([])
+        denied = agent.run('Show order 2')
+        self.assertNotIn('Violão Sintético Nylon', denied.text)
+        result = agent.run('E qual instrumento veio nele?')
+        self.assertIn('pedido autorizado desta sessão', result.text.casefold())
+        self.assertNotIn('Violão Sintético Nylon', result.text)
+        self.assertEqual(provider.complete.call_count, 0)
+
+    def test_word_quantity_compares_requested_units_with_verified_stock(self):
+        from app.conversation import requested_quantity
+        self.assertEqual(requested_quantity('quatro unidades desse instrumento'), 4)
+        self.assertEqual(requested_quantity('6 unidades do instrumento'), 6)
+        self.assertIsNone(requested_quantity('Qual é o estoque do item 63?'))
+
+        agent, _ = self.agent([call('get_product', product_id=3), text(),
+                               call('get_product', product_id=3), text()])
+        product = self.tools._catalog.get_product(3)
+        agent.run(f'Quero saber mais sobre {product.name}.')
+        result = agent.run('Se eu quisesse quatro unidades desse de aço, o estoque cobre?')
+        self.assertEqual(result.status, 'answered')
+        self.assertIn('O cadastro registra 5 unidades', result.text)
+        self.assertIn('cobre as 4 mencionadas e sobraria 1', result.text)
+        self.assertIn('se o estoque não mudar até a compra', result.text)
+        self.assertIn('não reserva o estoque nem cria um pedido', result.text)
 
     def test_order_item_followup_uses_bound_order_not_catalog(self):
         agent, provider = self.agent([call('lookup_order', order_id=1), text(),

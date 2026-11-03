@@ -3,6 +3,7 @@
 import copy
 import re
 from app.policies import normalize
+from app.return_policy import NUMERALS
 
 
 def memory_exchange(messages):
@@ -123,10 +124,15 @@ def purchase_interest(question):
 
 def requested_quantity(question):
     """Extract an explicitly requested count without mistaking item numbers for quantity."""
+    text = normalize(question)
     match = re.search(
-        r'\b(\d{1,6})\s+(?:(?:unidades?|units?|pecas?|peças?)\b|(?:desse|dessa|deste|desta|do|da|dos|das)\b)',
-        normalize(question))
-    return int(match[1]) if match else None
+        r'\b(\d{1,6})\s+(?:(?:unidades?|units?|pecas?)\b|(?:desse|dessa|deste|desta|do|da|dos|das)\b)',
+        text)
+    if match:
+        return int(match[1])
+    number_words = "|".join(sorted(NUMERALS, key=len, reverse=True))
+    word_match = re.search(r'\b(' + number_words + r')\s+(?:unidades?|units?|pecas?)\b', text)
+    return int(NUMERALS[word_match[1]]) if word_match else None
 
 
 def advisory_question(question):

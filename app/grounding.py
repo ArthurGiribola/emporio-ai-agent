@@ -98,7 +98,16 @@ def catalog_arguments(question: str, arguments: dict, catalog) -> dict:
     category_words = set()
     for category_id in categories:
         category_words.update(re.findall(r"\w+", _normalize(catalog.repository.categories[category_id].name)))
-    terms = [term for term in re.findall(r"\w+", _normalize(question))
+    # Remove mode descriptions as phrases, not words globally: a model or
+    # product name that happens to contain "demo" must remain searchable.
+    query_text = _normalize(question)
+    query_text = re.sub(r"\bde\s+(?:demonstracao|demonstration)\b", " ", query_text)
+    # "Inclusive os que estão sem estoque" is an availability instruction,
+    # not a product-name qualifier. Keep other uses of these words intact.
+    query_text = re.sub(
+        r"\binclusive(?=\s+(?:(?:os|as|aqueles|aquelas)\s+)?(?:que\s+)?(?:estao|ficam|ficarem|tenham|indisponiveis|inativos|sem\s+estoque))",
+        " ", query_text)
+    terms = [term for term in re.findall(r"\w+", query_text)
              if term not in ignored and term not in category_words
              and not re.fullmatch(r"\d+(?:[.,]\d+)?", term)]
     # Common English material terms map to the Portuguese catalog labels.
@@ -200,6 +209,15 @@ def order_record_followup(question: str) -> bool:
                           r"what i bought|o que (?:eu )?comprei|o que foi comprado)\b", text)
                 or (re.search(r"\b(?:pedido|order)\b", text)
                     and re.search(r"\b(?:tracking|delivery|status|total|rastre|entrega|itens?|produtos?)\b", text)))
+
+
+def order_items_followup(question: str) -> bool:
+    """Recognize an item question referring to the currently authorized order."""
+    text = normalize(question)
+    subject = r"\b(?:instrument\w*|guitarr\w*|baix\w*|ukulel\w*)\b"
+    action = r"\b(?:veio|vieram|inclu\w*|const\w*|aparec\w*|est\w*|registered|included)\b"
+    order_reference = r"\b(?:nele|nela|nesse|nessa|pedido|order|there|in it)\b"
+    return bool(re.search(subject, text) and re.search(action, text) and re.search(order_reference, text))
 
 
 def render_quote(data: dict, name: str, *, english: bool, synthetic: bool = False, issues=()) -> str:
