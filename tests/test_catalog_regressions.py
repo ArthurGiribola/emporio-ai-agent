@@ -145,6 +145,45 @@ class CatalogRegressionTests(unittest.TestCase):
         self.assertIn("Test Nylon", result.text)
         self.assertIn("Violão Sintético Aço", result.text)
 
+    def test_duplicate_successful_tool_calls_are_reused_only_within_one_turn(self):
+        provider = Mock(external=False)
+        repeated = ProviderReply("", (ToolCall("get_price_quote", {"product_id": 1}),
+                                       ToolCall("get_price_quote", {"product_id": 1})), {})
+        provider.complete.side_effect = [repeated, ProviderReply("Draft", (), {}),
+                                         repeated, ProviderReply("Draft", (), {})]
+        events = []
+        agent = Agent(provider, self.tools, observer=events.append)
+        execute = Mock(wraps=self.tools.execute)
+        self.tools.execute = execute
+
+        first = agent.run("Qual o preço do produto ID 1?")
+        second = agent.run("Qual o preço do produto ID 1?")
+
+        self.assertEqual(execute.call_count, 2)
+        self.assertEqual(first.tools_called, ("get_price_quote",))
+        self.assertEqual(second.tools_called, ("get_price_quote",))
+        self.assertEqual(sum(e.get("event") == "tool_cache_reuse" for e in events), 2)
+        self.assertEqual(sum(e.get("event") == "tool_result" and e.get("name") == "get_price_quote"
+                             for e in events), 2)
+        self.assertEqual(first.text.count("Test Nylon"), 1)
+        self.assertEqual(second.text.count("Test Nylon"), 1)
+
+    def test_distinct_policy_queries_do_not_share_cached_evidence(self):
+        provider = Mock(external=False)
+        provider.complete.side_effect = [
+            ProviderReply("", (ToolCall("search_policies", {"query": "garantia"}),
+                                ToolCall("search_policies", {"query": "frete"})), {}),
+            ProviderReply("Draft", (), {}),
+        ]
+        execute = Mock(wraps=self.tools.execute)
+        self.tools.execute = execute
+        agent = Agent(provider, self.tools)
+
+        result = agent.run("Quais são as condições de garantia e frete?")
+
+        self.assertEqual(execute.call_count, 2)
+        self.assertEqual(result.tools_called.count("search_policies"), 2)
+
     def test_all_results_and_partial_metadata_are_truthful(self):
         result = self.tools.execute("search_products", {"query": "violão", "max_price_brl": "150", "all_results": True})
         self.assertEqual(result["status"], "ok")

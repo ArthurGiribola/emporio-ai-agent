@@ -260,6 +260,11 @@ class Agent:
         question_index = len(history) - 1
         called = []
         current_results = []
+        # Results are reusable only during this run(), against the same bound
+        # services/identity. A later customer turn always performs a fresh read.
+        tool_result_cache = {}
+        tool_cache_context = (id(self._tools), self._order_id,
+                              bool(getattr(self._tools, 'is_synthetic', False)))
         language = language_hint(question) or 'pt'
         try:
             explicit_order = requested_order_id(question)
@@ -582,9 +587,28 @@ class Agent:
                 for call in reply.calls:
                     effective = self._tools.prepare_arguments(call.name, call.arguments, question)
                     references = requested_product_ids(question)
+                    cache_key = None
+                    if isinstance(effective, dict) and call.name in {
+                            'search_products', 'get_product', 'get_price_quote',
+                            'list_promotions', 'lookup_order', 'search_policies'}:
+                        try:
+                            canonical_arguments = json.dumps(effective, sort_keys=True,
+                                                             separators=(',', ':'), ensure_ascii=False)
+                            cache_key = (*tool_cache_context, call.name, canonical_arguments)
+                        except (TypeError, ValueError):
+                            cache_key = None
                     if (references and call.name in {'get_product', 'get_price_quote'} and isinstance(effective, dict)
                             and effective.get('product_id') not in references):
                         result = {'status': 'error', 'error': 'ambiguous_product_reference'}
+                        cache_key = None
+                        executed = False
+                        reused = False
+                    elif cache_key is not None and cache_key in tool_result_cache:
+                        result = copy.deepcopy(tool_result_cache[cache_key])
+                        executed = False
+                        reused = True
+                        self._emit({'event': 'tool_cache_reuse', 'name': call.name,
+                                    'arguments': effective, 'scope': 'current_turn'})
                     else:
                         try:
                             result = self._tools.execute(call.name, effective)
@@ -592,10 +616,16 @@ class Agent:
                             self._emit({'event': 'unexpected_failure', 'phase': 'tool',
                                         'exception_type': type(error).__name__})
                             result = {'status': 'error', 'error': 'tool_failure'}
-                    self._emit({"event": "tool_result", "name": call.name, "requested_arguments": call.arguments,
-                                "effective_arguments": effective, "result": result})
-                    current_results.append((call.name, result))
-                    called.append(call.name)
+                        executed = True
+                        reused = False
+                        if cache_key is not None and result.get('status') == 'ok':
+                            tool_result_cache[cache_key] = copy.deepcopy(result)
+                    if not reused:
+                        self._emit({"event": "tool_result", "name": call.name, "requested_arguments": call.arguments,
+                                    "effective_arguments": effective, "result": result})
+                        current_results.append((call.name, result))
+                        if executed or result.get('status') == 'error':
+                            called.append(call.name)
                     history.append({"role": "tool", "name": call.name, "call_id": call.call_id, "result": result})
                 # Large lists are already formatted from verified Python results.
                 # Avoid asking the model to reproduce 65 rows and exhaust tokens.
