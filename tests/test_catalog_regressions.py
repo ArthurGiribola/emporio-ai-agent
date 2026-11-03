@@ -86,6 +86,7 @@ class CatalogRegressionTests(unittest.TestCase):
         self.assertEqual(call["name"], "get_product")
         self.assertEqual(call["effective_arguments"]["product_id"], 7)
         self.assertIn("Violão Sintético Aço", result.text)
+        self.assertIn("5 unidades", result.text)
 
     def test_explicit_steel_descriptor_overrides_previous_nylon_selection(self):
         provider = Mock(external=False)
