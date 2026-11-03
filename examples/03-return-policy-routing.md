@@ -1,8 +1,11 @@
-# Return-policy routing failure
+# Return policy and elapsed-day follow-up
 
-Actual local Ollama conversation using `qwen3:4b-instruct` and the public synthetic DEMO fixtures.
-Runtime commit: `88a4856b23f8387b062b8e7f6a4752c0976acc5a`. Captured UTC: `2026-11-03T20:25:26+00:00`.
-Customer questions and assistant answers below are preserved verbatim. These transcripts include observed failures.
+Actual local Ollama execution using only approved synthetic DEMO fixtures. This example was refreshed after the focused policy/order routing fix; its previous, incorrect transcript is preserved in [`archive/2026-11-03-pre-fix`](archive/2026-11-03-pre-fix/03-return-policy-routing.md).
+
+- Model: `qwen3:4b-instruct`
+- Runtime commit: `6880af30310b22b21146ca68c18146696878b833`
+- Captured (UTC): 2026-11-03T20:51:50.633031+00:00
+- Data: DEMO synthetic policy; its 11-day rule is fictitious and does not represent the supplied LOCAL policy.
 
 ## Turn 1
 
@@ -10,28 +13,35 @@ Customer questions and assistant answers below are preserved verbatim. These tra
 
 **Assistant:**
 
-> O pedido de demonstração #1 está registrado como **confirmado**, com total de **R$ 99,00**.
->
-> Produtos registrados:
-> - 1× Violão Sintético Nylon
->
-> - Código de rastreamento: não informado.
-> - Previsão de entrega: não informada.
-> - Data efetiva de entrega: não informada.
->
-> O total original do pedido foi mantido, mesmo que os preços atuais do catálogo sejam diferentes.
-> O preço pago por cada item não está informado.
->
-> Essas são as informações registradas do pedido; não fiz nenhuma alteração nele.
+A regra para compras online prevê solicitar a devolução em até 11 dias corridos após o recebimento. Preciso confirmar o canal da compra e quantos dias corridos se passaram desde o recebimento para avaliar esse prazo.
 
-_Tools: lookup_order. Runner error flag: false. Duration: 5.26 s; model calls: 4._
+A devolução ainda depende das condições abaixo; estar no prazo não significa que ela já foi aprovada.
+As condições do produto precisam ser confirmadas com o atendimento.
+Não há informações suficientes para confirmar as condições de reembolso; o atendimento precisa esclarecê-las.
+Casos especiais e exclusões precisam ser avaliados pelo atendimento; esta resposta não aprova a devolução.
 
+Para solicitar a devolução, entre em contato com o atendimento.
+
+Fonte: seção 4.1, página 8.
+
+Execution: `answered`; answer origin: `application_guard_after_live_inference`; duration: 4.875 s; model calls: 4.
+Tools: `search_policies`.
 ## Turn 2
 
 **Customer:** Recebi há 5 dias, comprei pelo site.
 
 **Assistant:**
 
-> Não consegui confirmar os dados solicitados. Me diga o nome do instrumento ou o item do catálogo para consultar novamente.
+Sim — quanto ao prazo, 5 dias após o recebimento estão dentro dos 11 dias corridos previstos para solicitar a devolução de uma compra online.
 
-_Tools: none. Runner error flag: true. Duration: 3.05 s; model calls: 2._
+A devolução ainda depende das condições abaixo; estar no prazo não significa que ela já foi aprovada.
+As condições do produto precisam ser confirmadas com o atendimento.
+Não há informações suficientes para confirmar as condições de reembolso; o atendimento precisa esclarecê-las.
+Casos especiais e exclusões precisam ser avaliados pelo atendimento; esta resposta não aprova a devolução.
+
+Para solicitar a devolução, entre em contato com o atendimento.
+
+Fonte: seção 4.1, página 8.
+
+Execution: `answered`; answer origin: `application_guard_after_live_inference`; duration: 5.547 s; model calls: 4.
+Tools: `search_policies`.

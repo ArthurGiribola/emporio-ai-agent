@@ -173,35 +173,49 @@
     },
     {
       "slug": "03-politica-devolucao",
-      "title": "Política de devolução aplicada com prazo",
+      "title": "Return policy and elapsed-day follow-up",
+      "captured_utc": "2026-11-03T20:51:50.633031+00:00",
+      "runtime_commit": "6880af30310b22b21146ca68c18146696878b833",
+      "model": "qwen3:4b-instruct",
+      "data": "DEMO synthetic fixtures",
       "turns": [
         {
           "customer": "Me arrependi da minha compra, posso devolver meu pedido?",
-          "assistant": "O pedido de demonstração #1 está registrado como **confirmado**, com total de **R$ 99,00**.\n\nProdutos registrados:\n- 1× Violão Sintético Nylon\n\n- Código de rastreamento: não informado.\n- Previsão de entrega: não informada.\n- Data efetiva de entrega: não informada.\n\nO total original do pedido foi mantido, mesmo que os preços atuais do catálogo sejam diferentes.\nO preço pago por cada item não está informado.\n\nEssas são as informações registradas do pedido; não fiz nenhuma alteração nele.",
+          "assistant": "A regra para compras online prevê solicitar a devolução em até 11 dias corridos após o recebimento. Preciso confirmar o canal da compra e quantos dias corridos se passaram desde o recebimento para avaliar esse prazo.\n\nA devolução ainda depende das condições abaixo; estar no prazo não significa que ela já foi aprovada.\nAs condições do produto precisam ser confirmadas com o atendimento.\nNão há informações suficientes para confirmar as condições de reembolso; o atendimento precisa esclarecê-las.\nCasos especiais e exclusões precisam ser avaliados pelo atendimento; esta resposta não aprova a devolução.\n\nPara solicitar a devolução, entre em contato com o atendimento.\n\nFonte: seção 4.1, página 8.",
           "catalog_shown": null,
           "references": [],
           "error": false,
           "tools": [
             {
-              "name": "lookup_order",
+              "name": "search_policies",
               "arguments": {
-                "order_id": 1
+                "query": "Me arrependi da minha compra, posso devolver meu pedido?"
               },
               "status": "ok"
             }
           ],
-          "seconds": 5.26,
-          "llm_calls": 4
+          "seconds": 4.875,
+          "llm_calls": 4,
+          "answer_origin": "application_guard_after_live_inference"
         },
         {
           "customer": "Recebi há 5 dias, comprei pelo site.",
-          "assistant": "Não consegui confirmar os dados solicitados. Me diga o nome do instrumento ou o item do catálogo para consultar novamente.",
+          "assistant": "Sim — quanto ao prazo, 5 dias após o recebimento estão dentro dos 11 dias corridos previstos para solicitar a devolução de uma compra online.\n\nA devolução ainda depende das condições abaixo; estar no prazo não significa que ela já foi aprovada.\nAs condições do produto precisam ser confirmadas com o atendimento.\nNão há informações suficientes para confirmar as condições de reembolso; o atendimento precisa esclarecê-las.\nCasos especiais e exclusões precisam ser avaliados pelo atendimento; esta resposta não aprova a devolução.\n\nPara solicitar a devolução, entre em contato com o atendimento.\n\nFonte: seção 4.1, página 8.",
           "catalog_shown": null,
           "references": [],
-          "error": true,
-          "tools": [],
-          "seconds": 3.05,
-          "llm_calls": 2
+          "error": false,
+          "tools": [
+            {
+              "name": "search_policies",
+              "arguments": {
+                "query": "Me arrependi da minha compra, posso devolver meu pedido?\nComplemento do cliente: Recebi há 5 dias, comprei pelo site."
+              },
+              "status": "ok"
+            }
+          ],
+          "seconds": 5.547,
+          "llm_calls": 4,
+          "answer_origin": "application_guard_after_live_inference"
         }
       ]
     },
@@ -282,6 +296,14 @@
           "llm_calls": 1
         }
       ]
+    }
+  ],
+  "partial_refreshes": [
+    {
+      "slug": "03-politica-devolucao",
+      "captured_utc": "2026-11-03T20:51:50.633031+00:00",
+      "runtime_commit": "6880af30310b22b21146ca68c18146696878b833",
+      "note": "Only the return-policy scenario was refreshed with real Ollama; other four conversations remain byte-for-byte preserved."
     }
   ]
 }

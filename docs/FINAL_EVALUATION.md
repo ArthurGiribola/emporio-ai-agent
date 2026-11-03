@@ -5,6 +5,32 @@ November 3 Qwen capture and current example set are summarized in the README and
 [example index](../examples/README.md); do not treat the historical counts below
 as the current suite result.
 
+## November 3 targeted LOCAL verification
+
+After the documented address and return-policy routing corrections, the four
+official challenge prompts were each run once through the real local
+`qwen3:4b-instruct` agent with the supplied LOCAL data. All four passed their
+tool and evidence checks: the guitar search returned the 12 matching available
+records; the Takamine GD20 price came from `get_price_quote`; the store address
+was retrieved from policy section 1.2 (page 2) and only the requested address
+field was presented; and the general return question used `search_policies`
+(section 4.1, page 4) rather than `lookup_order`. The return reply preserved the
+online purchase condition and did not claim approval. Mean observed latency was
+2.96 seconds per turn. A separate LOCAL attempt to query an unrelated explicit
+order number was rejected without executing `lookup_order` or returning order
+data.
+
+The full test suite then ran on Python 3.12.15: **313 tests, 307 passed, 6
+skipped, no failures or errors**. The six skips are opt-in or environment-gated
+checks; the four challenge prompts above were separately executed against real
+Ollama, not mocked. Exact LOCAL answers remain in a git-ignored review report
+because the address and evidence came from the restricted source document.
+
+One of the five synthetic DEMO examples was also recaptured with real Ollama
+because it directly exercised the corrected return-policy routing. The other
+four example transcripts were not rerun or edited. The earlier failed DEMO
+return transcript was preserved in `examples/archive/2026-11-03-pre-fix/`.
+
 ## Scope and actual execution
 
 Phase 4 evaluated the existing one-model CLI architecture; no framework, UI,

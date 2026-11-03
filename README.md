@@ -424,16 +424,25 @@ remain under `docs/`.
 
 ### Final local challenge capture
 
-The four challenge prompts were each run twice with real local
-`qwen3:4b-instruct` at runtime commit `88a4856`. The local run found 12 available
-guitars under R$ 1,000 and returned a source-grounded quote for the requested
-Takamine model. It failed to answer the store-address question (no tool was
-called), and routed the return-policy question to order lookup, which returned an
-unavailable-order message. The latter is a genuine routing error even though the
-runner marked the turn as answered. The exact local prompts and verbatim answers
-are kept outside Git because that capture used the supplied LOCAL files; no local
-report, source CSV, customer record, or policy text is part of the public
-repository. These results are not presented as an all-pass evaluation.
+An earlier capture at runtime commit `88a4856` ran the four official prompts
+twice and exposed two routing failures: the address question did not call a tool,
+and the return-policy question was sent to order lookup. Those failures are
+preserved in the local-only report. After the focused routing correction, all
+four prompts were rerun once with real local `qwen3:4b-instruct` against LOCAL
+data. All four passed their source/tool checks: the catalog search returned 12
+available violões under R$ 1,000; the Takamine GD20 price used `get_price_quote`;
+the address came from policy section 1.2, page 2; and the general return question
+used `search_policies`, not `lookup_order`, citing section 4.1. The address reply
+was limited to the requested field and did not include the conflicting phone or
+email values. The measured mean turn latency was 2.96 seconds for this four-turn
+run. A separate LOCAL check rejected an explicit unrelated order number without
+calling `lookup_order` or returning order data.
+
+The exact LOCAL prompts, tool traces, responses, and historical failures remain
+outside Git because these runs used the supplied restricted policy and LOCAL
+records. No local report, source CSV, customer record, or policy text is part of
+the public repository. This is a four-prompt verification, not a guarantee of
+perfect behavior.
 
 ### Recent real Ollama conversation evaluations
 

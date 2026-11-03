@@ -1,0 +1,41 @@
+{
+  "model": "qwen3:4b-instruct",
+  "commit": "88a4856b23f8387b062b8e7f6a4752c0976acc5a",
+  "data": "DEMO synthetic fixtures (app/fixtures/synthetic.json)",
+  "captured_utc": "2026-11-03T20:25:26+00:00",
+  "conversation": {
+    "slug": "03-politica-devolucao",
+    "title": "Política de devolução aplicada com prazo",
+    "turns": [
+      {
+        "customer": "Me arrependi da minha compra, posso devolver meu pedido?",
+        "assistant": "O pedido de demonstração #1 está registrado como **confirmado**, com total de **R$ 99,00**.\n\nProdutos registrados:\n- 1× Violão Sintético Nylon\n\n- Código de rastreamento: não informado.\n- Previsão de entrega: não informada.\n- Data efetiva de entrega: não informada.\n\nO total original do pedido foi mantido, mesmo que os preços atuais do catálogo sejam diferentes.\nO preço pago por cada item não está informado.\n\nEssas são as informações registradas do pedido; não fiz nenhuma alteração nele.",
+        "catalog_shown": null,
+        "references": [],
+        "error": false,
+        "tools": [
+          {
+            "name": "lookup_order",
+            "arguments": {
+              "order_id": 1
+            },
+            "status": "ok"
+          }
+        ],
+        "seconds": 5.26,
+        "llm_calls": 4
+      },
+      {
+        "customer": "Recebi há 5 dias, comprei pelo site.",
+        "assistant": "Não consegui confirmar os dados solicitados. Me diga o nome do instrumento ou o item do catálogo para consultar novamente.",
+        "catalog_shown": null,
+        "references": [],
+        "error": true,
+        "tools": [],
+        "seconds": 3.05,
+        "llm_calls": 2
+      }
+    ]
+  },
+  "note": "Unmodified pre-fix live DEMO transcript, retained as historical evidence."
+}
