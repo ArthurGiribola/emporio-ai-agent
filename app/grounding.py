@@ -82,7 +82,7 @@ def catalog_arguments(question: str, arguments: dict, catalog) -> dict:
         " estao esta primeiro primeiros primeira primeiras ultimo ultimos do da de dos das um uma uns umas o a os as me mostra mostre ver"
         " por ate no maximo reais real r com ate todos tudo incluindo pf favor please all every available product products"
         " quanto custa cost costs preco precos price prices valor values quanto custa aceita aceitam aceita bem comparar compare comparison differences difference diferenca"
-        " quero queria queremos gostariamos estou estamos to pensando considerando namorando escolhendo ainda levar pegar separa separar passa manda mostra confere gastar uns umao choose choosing looking help me can you please"
+        " quero queria queremos gostariamos estou estamos to pensando considerando namorando escolhendo ainda levar pegar separa separar passa manda mostra mostrar pode podem posso podemos poderia poderiam confere gastar uns umao choose choosing looking help me can you please"
         " stock stocks inventory in stock do you does it"
         " demonstration synthetic only filtered intent tokens original text withheld"
         " instrument instruments models options list show catalog full complete cheapest cheapest first lowest highest price sorted price prices preco precos valor final"
@@ -206,7 +206,11 @@ def order_record_followup(question: str) -> bool:
     if requested_order_id(question) is not None or re.search(
             r"\b(?:product|produto|customer|cliente|identity|identidade|catalog|catalogo)\b", text):
         return False
-    return bool(re.search(r"\b(?:record|this order|that order|registro|esse pedido|"
+    tracking_field = (re.search(
+        r"\b(?:codigo|code)\b.*\b(?:rastre\w*|tracking)\b|"
+        r"\b(?:rastre\w*|tracking)\b.*\b(?:codigo|code)\b|\btracking code\b", text)
+        and re.search(r"\b(?:preenchid\w*|registrad\w*|cadastrad\w*|informad\w*|consta|aparece|mostr\w*|tem|existe|is there|recorded)\b", text))
+    return bool(tracking_field or re.search(r"\b(?:record|this order|that order|registro|esse pedido|"
                           r"what i bought|o que (?:eu )?comprei|o que foi comprado)\b", text)
                 or (re.search(r"\b(?:pedido|order)\b", text)
                     and re.search(r"\b(?:tracking|delivery|status|total|rastre|entrega|itens?|produtos?)\b", text)))

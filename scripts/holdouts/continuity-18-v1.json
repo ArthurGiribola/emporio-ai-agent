@@ -1,0 +1,256 @@
+{
+  "version": 1,
+  "model": "qwen3:4b-instruct",
+  "data_mode": "DEMO synthetic fixtures",
+  "description": "Original 18-turn synthetic holdout. Preserves the historical comparison assertion that treated a promotional final price as the table price; use v2 for corrected evaluation.",
+  "scenarios": [
+    {
+      "id": "rapport_guidance",
+      "category": "rapport_guidance",
+      "turns": [
+        {
+          "user": "Boa tarde, sou novo por aqui e fico meio perdido com tantos instrumentos.",
+          "expected_scope": "shop",
+          "expected_tool_sequence": [],
+          "must_not_call_tools": true,
+          "must_not_include": [
+            "Não consegui confirmar",
+            "consulta falhou"
+          ]
+        },
+        {
+          "user": "Gosto de som grave, mas precisava de algo fácil de levar na mochila. O que faz mais sentido explorar?",
+          "expected_scope": "shop",
+          "expected_tool_sequence": [],
+          "must_not_call_tools": true,
+          "must_not_include": [
+            "Não consegui confirmar",
+            "consulta falhou"
+          ]
+        },
+        {
+          "user": "Vocês conseguem explicar as diferenças sem eu decidir agora?",
+          "expected_scope": "shop",
+          "expected_tool_sequence": [],
+          "must_not_call_tools": true,
+          "must_not_include": [
+            "Não consegui confirmar",
+            "consulta falhou"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "catalog_followups",
+      "category": "catalog_followups",
+      "turns": [
+        {
+          "user": "Quais violões de nylon estão disponíveis no catálogo?",
+          "expected_scope": "shop",
+          "expected_tool_sequence": [
+            "search_products"
+          ],
+          "must_include_all": [
+            "Violão Sintético Nylon"
+          ]
+        },
+        {
+          "user": "Gostei da opção de nylon. Qual é o preço dela à vista?",
+          "expected_scope": "shop",
+          "expected_tool_sequence": [
+            "get_price_quote"
+          ],
+          "must_return_product_ids": [
+            1
+          ],
+          "expected_final_prices_brl": [
+            "90.09"
+          ]
+        },
+        {
+          "user": "Se eu levasse duas unidades dessa, o estoque cobre?",
+          "expected_scope": "shop",
+          "expected_tool_sequence": [
+            "get_product"
+          ],
+          "must_include_all": [
+            "cobre as 2 mencionadas",
+            "sobraria 1",
+            "não reserva o estoque"
+          ],
+          "must_return_product_ids": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "explicit_switch_comparison",
+      "category": "explicit_switch_comparison",
+      "turns": [
+        {
+          "user": "Qual é o valor registrado para Violão Sintético Nylon?",
+          "expected_scope": "shop",
+          "expected_tool_sequence": [
+            "get_price_quote"
+          ],
+          "must_return_product_ids": [
+            1
+          ],
+          "expected_final_prices_brl": [
+            "90.09"
+          ]
+        },
+        {
+          "user": "Mudando para Violão Sintético Aço, quanto fica no Pix?",
+          "expected_scope": "shop",
+          "expected_tool_sequence": [
+            "get_price_quote"
+          ],
+          "must_return_product_ids": [
+            3
+          ],
+          "expected_final_prices_brl": [
+            "237.50"
+          ]
+        },
+        {
+          "user": "Comparando esse com o nylon, qual tem menor preço de tabela?",
+          "expected_scope": "shop",
+          "expected_tool_sequence": [
+            "get_price_quote",
+            "get_price_quote"
+          ],
+          "must_return_product_ids": [
+            1,
+            3
+          ],
+          "expected_final_prices_brl": [
+            "90.09",
+            "250.00"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "policy_followup",
+      "category": "policy_followup",
+      "turns": [
+        {
+          "user": "Fiz uma compra pelo site e me arrependi; até quando posso solicitar devolução?",
+          "expected_scope": "shop",
+          "expected_tool_sequence": [
+            "search_policies"
+          ],
+          "must_include_all": [
+            "11 dias",
+            "seção 4.1"
+          ]
+        },
+        {
+          "user": "E se recebi faz cinco dias?",
+          "expected_scope": "shop",
+          "expected_tool_sequence": [
+            "search_policies"
+          ],
+          "must_include_all": [
+            "5 dias",
+            "dentro dos 11 dias",
+            "seção 4.1"
+          ],
+          "expected_policy_assessment": {
+            "channel": "online",
+            "elapsed_days": 5,
+            "window_days": 11,
+            "within_window": true
+          }
+        },
+        {
+          "user": "O produto estar em promoção altera o prazo de arrependimento?",
+          "expected_scope": "shop",
+          "expected_tool_sequence": [
+            "search_policies"
+          ],
+          "must_include_all": [
+            "seção 4.1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "authorized_order_followup",
+      "category": "authorized_order_followup",
+      "turns": [
+        {
+          "user": "Você consegue consultar o pedido de demonstração vinculado a esta sessão?",
+          "expected_scope": "shop",
+          "expected_tool_sequence": [
+            "lookup_order"
+          ],
+          "must_include_all": [
+            "confirmado",
+            "R$ 99,00"
+          ]
+        },
+        {
+          "user": "Qual instrumento veio nesse pedido e quantas unidades?",
+          "expected_scope": "shop",
+          "expected_tool_sequence": [],
+          "must_not_call_tools": true,
+          "must_include_all": [
+            "Violão Sintético Nylon",
+            "1"
+          ],
+          "must_have_prior_tool": "lookup_order"
+        },
+        {
+          "user": "O código de rastreio está preenchido?",
+          "expected_scope": "shop",
+          "expected_tool_sequence": [],
+          "must_not_call_tools": true,
+          "must_include_all": [
+            "não informado"
+          ],
+          "must_have_prior_tool": "lookup_order"
+        }
+      ]
+    },
+    {
+      "id": "scope_topic_and_purchase",
+      "category": "scope_topic_and_purchase",
+      "turns": [
+        {
+          "user": "Escreve um algoritmo curto de busca binária para mim.",
+          "expected_scope": "outside",
+          "expected_tool_sequence": [],
+          "must_not_call_tools": true,
+          "must_include_all": [
+            "fora do escopo"
+          ]
+        },
+        {
+          "user": "Voltando à loja: quais meios de pagamento vocês aceitam?",
+          "expected_scope": "shop",
+          "expected_tool_sequence": [
+            "search_policies"
+          ]
+        },
+        {
+          "user": "Quero levar duas unidades do Violão Sintético Aço. O estoque cobre?",
+          "expected_scope": "shop",
+          "expected_tool_sequence": [
+            "get_product"
+          ],
+          "must_include_all": [
+            "cobre as 2 mencionadas",
+            "sobraria 3",
+            "não reserva o estoque"
+          ],
+          "must_return_product_ids": [
+            3
+          ]
+        }
+      ]
+    }
+  ]
+}

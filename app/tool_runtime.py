@@ -67,10 +67,11 @@ class ToolRuntime:
     def prepare_arguments(self, name: str, arguments: dict, question: str) -> dict:
         named_product = self._named_product_id(question)
         if isinstance(arguments, dict) and name in {'get_product', 'get_price_quote'}:
+            explicit_ids = requested_product_ids(question)
             explicit = requested_product_id(question)
             if explicit is not None:
                 arguments = {**arguments, 'product_id': explicit}
-            elif named_product is not None:
+            elif len(explicit_ids) <= 1 and named_product is not None:
                 arguments = {**arguments, 'product_id': named_product}
         if isinstance(arguments, dict) and name == "get_price_quote":
             result = dict(arguments)
@@ -119,8 +120,14 @@ class ToolRuntime:
             r'\b(?:preco\w*|valor|custa|quanto|price|cost|estoque|stock|dispon\w*|unidade\w*|'
             r'available|promoc\w*|discount|politic\w*|garanti\w*|devol\w*|reembols\w*|'
             r'pedido|order|rastre\w*|tracking|horario|abre|fecha|pag\w*.*aceit\w*)\b', text)
-        if advisory_question(question) and not factual_signal:
+        explicit_catalog_name = any(
+            normalize(product.name) in text for product in self._catalog.repository.products.values())
+        if advisory_question(question) and not factual_signal and not explicit_catalog_name and not requested_product_ids(question):
             return None
+        if explicit_catalog_name and not factual_signal:
+            # General guidance can stay conversational, but a named record
+            # still needs source evidence before the model describes it.
+            return 'get_product'
         if requested_order_id(question) is not None or order_record_followup(question) or re.search(
                 r'\b(?:pedido|order|rastre\w*|tracking)\b', text):
             return "lookup_order"
@@ -245,6 +252,23 @@ class ToolRuntime:
         products = {r['data']['product_id']: r['data'] for n, r in results if n == 'get_product' and r.get('status') == 'ok'}
         quotes = [r['data'] for n, r in results if n == 'get_price_quote' and r.get('status') == 'ok']
         if quotes:
+            if re.search(r'\b(?:preco|valor) (?:de )?tabela\b|\b(?:list|regular) price\b', normalize(question)):
+                ordered = sorted(quotes, key=lambda quote: (Decimal(str(quote['base_price_brl'])), quote['product_id']))
+                rows = []
+                for quote in ordered:
+                    name = self._catalog.get_product(quote['product_id']).name
+                    rows.append(f"- **{name}** — preço de tabela: {brl(quote['base_price_brl'])}.")
+                    if quote.get('discount_kind') == 'promotion':
+                        rows.append(f"  Promoção ativa: {brl(quote['final_price_brl'])} ({quote['discount_percent']}%).")
+                if english_question(question):
+                    rows = [row.replace('preço de tabela:', 'list price:').replace('Promoção ativa:', 'Active promotion:')
+                            for row in rows]
+                    lead = (f"The lower list price is **{self._catalog.get_product(ordered[0]['product_id']).name}**.\n\n"
+                            if len(ordered) > 1 else '')
+                    return lead + '\n'.join(rows)
+                lead = (f"O menor preço de tabela é do **{self._catalog.get_product(ordered[0]['product_id']).name}**.\n\n"
+                        if len(ordered) > 1 else '')
+                return lead + '\n'.join(rows)
             return '\n\n'.join(render_quote(q, self._catalog.get_product(q['product_id']).name,
                 english=english_question(question), synthetic=self.is_synthetic,
                 issues=product_issues(self._catalog.get_product(q['product_id']), english=english_question(question))) for q in quotes)

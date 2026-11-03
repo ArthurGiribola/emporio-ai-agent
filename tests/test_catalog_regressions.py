@@ -237,6 +237,44 @@ class CatalogRegressionTests(unittest.TestCase):
         self.assertIn("Violão Sintético Aço", result.text)
         transport.assert_not_called()
 
+    def test_deictic_comparison_keeps_selected_and_explicit_products_and_answers_list_price(self):
+        transport = Mock()
+        provider = OllamaProvider(ProviderConfig(provider="ollama", model="qwen3:4b-instruct"), transport)
+        events = []
+        agent = Agent(provider, self.tools, observer=events.append)
+
+        agent.run("Qual é o preço de tabela do Test Nylon?")
+        agent.run("Mudando para Violão Sintético Aço, quanto fica no PIX?")
+        answer = agent.run("Comparando esse com o nylon, qual tem menor preço de tabela?")
+
+        quotes = [event for event in events if event.get('event') == 'tool_result'
+                  and event.get('name') == 'get_price_quote']
+        self.assertEqual([event['effective_arguments']['product_id'] for event in quotes[-2:]], [7, 1])
+        self.assertIn('Test Nylon', answer.text)
+        self.assertIn('Violão Sintético Aço', answer.text)
+        self.assertIn('preço de tabela: R$ 100,10', answer.text)
+        self.assertIn('preço de tabela: R$ 250,00', answer.text)
+        self.assertIn('menor preço de tabela', answer.text.casefold())
+        self.assertIn('R$ 90,09', answer.text)  # The active promotion remains separate from list price.
+        transport.assert_not_called()
+
+    def test_plural_comparison_uses_two_recent_verified_products(self):
+        transport = Mock()
+        provider = OllamaProvider(ProviderConfig(provider="ollama", model="qwen3:4b-instruct"), transport)
+        events = []
+        agent = Agent(provider, self.tools, observer=events.append)
+
+        agent.run("Qual é o preço do Test Nylon?")
+        agent.run("E quanto custa o Violão Sintético Aço?")
+        result = agent.run("Compara os dois pelo preço de tabela.")
+
+        quotes = [event for event in events if event.get('event') == 'tool_result'
+                  and event.get('name') == 'get_price_quote']
+        self.assertEqual({event['effective_arguments']['product_id'] for event in quotes[-2:]}, {1, 7})
+        self.assertIn('preço de tabela: R$ 100,10', result.text)
+        self.assertIn('preço de tabela: R$ 250,00', result.text)
+        transport.assert_not_called()
+
     def test_catalog_browsing_and_policy_questions_stay_outside_product_fast_path(self):
         provider = Mock(external=False)
         provider.complete.side_effect = [

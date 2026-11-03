@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "model": "qwen3:4b-instruct",
+  "data_mode": "DEMO synthetic fixtures",
+  "description": "Fresh Portuguese wording variants for conversational guidance, product switching and same-session order continuity.",
+  "scenarios": [
+    {
+      "id": "fresh_guidance_before_deciding",
+      "category": "natural_guidance",
+      "turns": [
+        {
+          "user": "Sou novo por aqui. Curto música pesada, mas ainda estou só conhecendo as opções.",
+          "expected_scope": "shop",
+          "expected_status": "answered",
+          "must_not_call_tools": true,
+          "must_not_include": ["Não consegui confirmar", "consulta falhou"]
+        },
+        {
+          "user": "E se eu só quisesse entender as diferenças antes de escolher?",
+          "expected_scope": "shop",
+          "expected_status": "answered",
+          "must_not_call_tools": true,
+          "must_not_include": ["Não consegui confirmar", "consulta falhou"]
+        },
+        {
+          "user": "Agora pode mostrar os violões de aço disponíveis?",
+          "expected_scope": "shop",
+          "must_call_tool": "search_products",
+          "must_return_product_ids": [3]
+        }
+      ]
+    },
+    {
+      "id": "fresh_product_switch_and_list_price",
+      "category": "product_context",
+      "turns": [
+        {
+          "user": "Quanto custa o Violão Sintético Aço?",
+          "expected_scope": "shop",
+          "must_call_tool": "get_price_quote",
+          "must_return_product_ids": [3],
+          "must_include_all": ["R$ 250,00"]
+        },
+        {
+          "user": "E o de nylon, qual é o preço de tabela?",
+          "expected_scope": "shop",
+          "must_call_tool": "get_price_quote",
+          "must_return_product_ids": [1],
+          "expected_list_prices_brl": ["100.10"],
+          "must_include_all": ["preço de tabela", "R$ 100,10"]
+        },
+        {
+          "user": "Compara esse com o de aço pelo preço de tabela.",
+          "expected_scope": "shop",
+          "expected_tool_sequence": ["get_price_quote", "get_price_quote"],
+          "must_return_product_ids": [1, 3],
+          "expected_list_prices_brl": ["100.10", "250.00"],
+          "must_include_all": ["Violão Sintético Nylon", "Violão Sintético Aço", "menor preço de tabela"]
+        }
+      ]
+    },
+    {
+      "id": "fresh_authorized_order_after_topic_shift",
+      "category": "order_continuity",
+      "turns": [
+        {
+          "user": "Qual o status do pedido de demonstração autorizado para esta sessão?",
+          "expected_scope": "shop",
+          "must_call_tool": "lookup_order",
+          "must_include_all": ["confirmado", "R$ 99,00"]
+        },
+        {
+          "user": "Fora da música: escreva uma função bubble sort em Python.",
+          "expected_scope": "outside",
+          "expected_status": "out_of_scope",
+          "must_not_call_tools": true
+        },
+        {
+          "user": "O cadastro mostra algum código de rastreamento?",
+          "expected_scope": "shop",
+          "expected_status": "answered",
+          "must_not_call_tools": true,
+          "must_have_prior_tool": "lookup_order",
+          "must_include_all": ["não informado"]
+        }
+      ]
+    }
+  ]
+}

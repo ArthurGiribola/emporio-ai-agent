@@ -114,8 +114,10 @@ def simplify_request(question):
 
 def purchase_interest(question):
     t = normalize(question)
-    return bool(re.search(r'\b(?:comprar|compro|compraria|adquirir|adquiro|levar|levo|separ\w*|pegar|pego|buy|purchase|take)\b|'
-                          r'\b(?:pensando|considerando|looking|planning)\b.*\b(?:viol|instrument|product|guit|music)\w*', t) or
+    explicit_action = re.search(r'\b(?:comprar|compro|compraria|adquirir|adquiro|separ\w*|pegar|pego|buy|purchase)\b', t)
+    explicit_take = re.search(r'\b(?:quero|queria|gostaria|pretendo|vou|want|would like|plan to)\s+(?:levar|pegar|take)\b', t)
+    return bool(explicit_action or explicit_take or
+                re.search(r'\b(?:pensando|considerando|looking|planning)\b.*\b(?:viol|instrument|product|guit|music)\w*', t) or
                 (re.search(r'\b(?:namorando a ideia|thinking about|considerando a ideia)\b', t)
                  and re.search(r'\b(?:viol\w*|instrument\w*|product|guit\w*|music)\b', t)) or
                 (re.search(r'\b\d+\s+(?:unidades?|units?)\b', t)
@@ -149,11 +151,27 @@ def advisory_question(question):
                           r'good fit|where should i start|beginner advice|advice for|which should i learn|'
                           r'me ajudar a escolher|me ajudar a decidir|combina comigo|me orientar|qual instrumento devo|'
                           r'o que voce recomenda|dica para comecar|por onde comecar|por qual lado comecar|'
+                          r'o que faz (?:mais )?sentido explorar|o que vale a pena explorar|what makes sense to explore|what should i explore|'
                           r'explica.*simples|sem palavra complicada|melhor|nao manjo nada|tem problema|'
                           r'zero experiencia|sem experiencia|nunca toquei|nunca encostei|getting started|'
                           r'no experience|just starting|beginner|which is better)\b', t)
                 or (re.search(r'\b(?:how|como|what|o que|why|por que|explain|explique|difference|diferenca)\b', t)
                     and re.search(r'\b(?:instrument\w*|viol\w*|guit\w*|ukulel\w*|baix\w*|keyboard|teclado|midi|strings?|cordas?|nylon|steel|aco|tocar|play|tune|afinar)\b', t)))
+
+
+def contextual_advisory_question(question, previous_questions):
+    """Recognize a non-factual advice follow-up whose subject is already in context."""
+    if advisory_question(question):
+        return True
+    t = normalize(question)
+    factual = r'\b(?:preco|valor|custa|quanto|stock|estoque|disponivel|available|promotion|promoc|discount|desconto|policy|politica|warranty|garantia|return|devolucao|refund|reembolso|order|pedido|tracking|rastre|opening hours|horario)\b'
+    if re.search(factual, t) or not re.search(
+            r'\b(?:explic\w*|explain\w*|diferenc\w*|differences?|sem (?:precisar )?(?:escolher|decidir)|without (?:choosing|deciding))\b', t):
+        return False
+    context = normalize(' '.join(previous_questions[-3:]))
+    return bool(re.search(
+        r'\b(?:gosto|prefiro|curto|som|estilo|explor\w*|escolh\w*|combina comigo|'
+        r'come\w*|aprend\w*|beginner|like|prefer|sound|style|explor\w*|choose|start)\b', context))
 
 
 def explanation_followup(question):

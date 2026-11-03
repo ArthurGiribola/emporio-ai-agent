@@ -5,6 +5,7 @@ import os
 import re
 import sys
 import time
+from decimal import Decimal
 from datetime import datetime, timezone
 from http.client import HTTPConnection
 from pathlib import Path
@@ -124,6 +125,7 @@ def main():
         for scenario in scenarios:
             session.reset()
             turns, scenario_pass = [], True
+            prior_successful_tools = []
             for case in scenario['turns']:
                 events = []
                 previous = session._agent._observer
@@ -166,6 +168,34 @@ def main():
                         r'\b(?:snapshot|list_price_brl|tool_call|tool call|data retrieval|database field|'
                         r'retrieval system|function calling)\b', visible_text, re.IGNORECASE),
                 }
+                if 'expected_tool_sequence' in case:
+                    checks['tool_sequence'] = tools == case['expected_tool_sequence']
+                if case.get('must_return_product_ids') is not None:
+                    returned_ids = []
+                    for event in events:
+                        if event.get('event') != 'tool_result' or event.get('result', {}).get('status') != 'ok':
+                            continue
+                        data = event.get('result', {}).get('data', {})
+                        if event.get('name') in {'get_product', 'get_price_quote'}:
+                            if type(data.get('product_id')) is int:
+                                returned_ids.append(data['product_id'])
+                        elif event.get('name') == 'search_products':
+                            returned_ids.extend(row['product_id'] for row in data.get('products', [])
+                                                if type(row.get('product_id')) is int)
+                    checks['product_ids'] = set(returned_ids) == set(case['must_return_product_ids'])
+                for assertion, price_key in (('expected_list_prices_brl', 'base_price_brl'),
+                                             ('expected_final_prices_brl', 'final_price_brl')):
+                    if case.get(assertion) is not None:
+                        actual_prices = []
+                        for event in events:
+                            data = event.get('result', {}).get('data', {})
+                            if (event.get('event') == 'tool_result' and event.get('name') == 'get_price_quote'
+                                    and event.get('result', {}).get('status') == 'ok' and data.get(price_key) is not None):
+                                actual_prices.append(Decimal(str(data[price_key])))
+                        checks[assertion] = sorted(actual_prices) == sorted(
+                            Decimal(str(value)) for value in case[assertion])
+                if case.get('must_have_prior_tool'):
+                    checks['prior_tool_evidence'] = case['must_have_prior_tool'] in prior_successful_tools
                 expected_policy_assessment = case.get('expected_policy_assessment')
                 if expected_policy_assessment:
                     evidence = next((event.get('result', {}).get('data', {}).get('online_return_assessment')
@@ -183,10 +213,14 @@ def main():
                               'answer': answer.text if not case.get('must_redact_answer') else None,
                               'answer_redacted': bool(case.get('must_redact_answer')), 'status': status,
                               'error': answer.error, 'latency_ms': latency_ms,
+                              'llm_calls': sum(event.get('event') == 'model_response' for event in events),
+                              'tool_call_count': len(tools),
                               'catalog_products': catalog_products,
                               'tool_events': [evaluation_tool_event(e) for e in events if e.get('event') == 'tool_result'],
                               'routing_events': [evaluation_route_event(e) for e in events if e.get('phase') == 'scope' or e.get('event') in {'scope_decision', 'model_response'}],
                               'checks': checks, 'passed': passed})
+                prior_successful_tools.extend(event['name'] for event in events
+                    if event.get('event') == 'tool_result' and event.get('result', {}).get('status') == 'ok')
             report['scenarios'].append({'id': scenario['id'], 'category': scenario['category'],
                                         'passed': scenario_pass, 'turns': turns})
     finally:
@@ -195,7 +229,9 @@ def main():
     flat = [t for s in report['scenarios'] for t in s['turns']]
     report['overall'] = {'passed': sum(t['passed'] for t in flat), 'total': len(flat),
                          'pass_rate': round(sum(t['passed'] for t in flat) / len(flat), 3) if flat else 0,
-                         'mean_latency_ms': round(sum(t['latency_ms'] for t in flat) / len(flat)) if flat else 0}
+                         'mean_latency_ms': round(sum(t['latency_ms'] for t in flat) / len(flat)) if flat else 0,
+                         'llm_calls': sum(t['llm_calls'] for t in flat),
+                         'tool_calls': sum(t['tool_call_count'] for t in flat)}
     report['categories'] = {category: {'passed': sum(t['passed'] for s in report['scenarios'] if s['category'] == category for t in s['turns']),
                                        'total': sum(len(s['turns']) for s in report['scenarios'] if s['category'] == category)}
                             for category in sorted({s['category'] for s in report['scenarios']})}

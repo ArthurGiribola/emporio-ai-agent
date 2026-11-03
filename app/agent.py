@@ -15,7 +15,8 @@ from app.return_policy import online_return_question, elapsed_followup_days, ela
 from app.catalog_view import CatalogView, build_catalog_view
 from app.conversation import (memory_exchange, assistant_text, conversation_question,
     purchase_interest, advisory_question, exploration_response, simplify_request,
-    explanation_followup, policy_followup, failure_message, requested_quantity)
+    explanation_followup, policy_followup, failure_message, requested_quantity,
+    contextual_advisory_question)
 from app.conversation import product_followup, failure_followup
 from app.conversation import conversational_intent
 from app.policies import normalize
@@ -322,6 +323,11 @@ class Agent:
                 return self._plain(question, history, failure_message(self._last_failure, language == 'en'))
             previous_questions = [m["content"] for exchange in self._turns for m in exchange if m["role"] == "user"]
             previous_answers = [assistant_text(m) for exchange in self._turns for m in exchange if m['role'] == 'assistant']
+            contextual_guidance = (contextual_advisory_question(question, previous_questions)
+                                   and not self._recent_product_ids
+                                   and not requested_product_ids(question)
+                                   and self._tools._named_product_id(question) is None)
+            guidance_turn = advisory_question(question) or contextual_guidance
             if self._last_failure:
                 previous_answers.append(failure_message(self._last_failure, language == 'en'))
             if self._recent_product_ids:
@@ -396,7 +402,7 @@ class Agent:
             # Reuse the secure service's already-authorized, read-only order
             # record for a same-session detail follow-up such as tracking.
             if (has_authorized_order_context
-                    and re.search(r'\b(?:tracking|delivery|status|total|rastre|entrega|itens?|produtos?|instrumentos?)\b', normalize(question))
+                    and re.search(r'\b(?:tracking|delivery|status|total|rastre\w*|entrega|itens?|produtos?|instrumentos?)\b', normalize(question))
                     and (order_record_followup(question) or order_items_followup(question) or product_followup(question))):
                 answer = self._tools.grounded_answer(self._last_fact_question, self._last_results, '')
                 if answer:
@@ -427,6 +433,39 @@ class Agent:
             # product state. This prevents a prior focus from overriding an
             # explicit product or a comparison naming multiple products.
             current_named_products = self._tools._named_product_matches(question)
+            # A mixed explicit/deictic comparison combines the current named
+            # product with the immediately selected, verified product. Resolve
+            # this before the generic pronoun path can attach only one ID.
+            comparison = bool(re.search(r'\b(?:compar\w*|compare|versus|vs|diferenc\w*)\b', normalize(question)))
+            singular_deictic = bool(re.search(
+                r'\b(?:esse|essa|este|esta|aquele|aquela|this|that)\b', question, re.IGNORECASE))
+            plural_deictic = bool(re.search(r'\b(?:ambos|both|these two|those two)\b|\bos dois\b', normalize(question)))
+            if comparison and not requested_product_ids(question):
+                resolved_comparison = list(current_named_products)
+                if plural_deictic:
+                    context_ids = (self._last_product_ids if len(self._last_product_ids) > 1
+                                   else self._recent_product_ids[-2:])
+                    resolved_comparison = list(dict.fromkeys((*resolved_comparison, *context_ids)))
+                elif singular_deictic and len(current_named_products) == 1:
+                    if len(self._last_product_ids) == 1:
+                        resolved_comparison = list(dict.fromkeys((*self._last_product_ids, *current_named_products)))
+                    elif not self._last_product_ids:
+                        candidates = [product_id for product_id in self._recent_product_ids
+                                      if product_id not in current_named_products]
+                        if len(candidates) == 1:
+                            resolved_comparison = list(dict.fromkeys((*current_named_products, *candidates)))
+                        elif len(candidates) > 1:
+                            names = '; '.join(self._tools._catalog.get_product(i).name for i in candidates)
+                            return self._plain(question, history,
+                                'Qual instrumento você quer comparar com esse modelo? Os anteriores foram: ' + names + '.' if language == 'pt' else
+                                'Which earlier instrument should I compare with this model? The previous options were: ' + names + '.')
+                    else:
+                        names = '; '.join(self._tools._catalog.get_product(i).name for i in self._last_product_ids)
+                        return self._plain(question, history,
+                            'Qual dos instrumentos anteriores você quer comparar? ' + names + '.' if language == 'pt' else
+                            'Which of the previously discussed instruments should I compare? ' + names + '.')
+                if len(resolved_comparison) >= 2:
+                    question += '\n' + ', '.join(f'Produto ID {product_id}' for product_id in resolved_comparison) + '.'
             if purchase_interest(question):
                 quantity = requested_quantity(question)
                 references = requested_product_ids(question)
@@ -579,17 +618,18 @@ class Agent:
                 required_tool = self._tools.required_evidence(question)
                 if required_tool:
                     schemas = [schema for schema in schemas if schema['name'] == required_tool]
-                elif advisory_question(question):
+                elif guidance_turn:
                     schemas = []
                 if retry_tool:
                     schemas = [schema for schema in schemas if schema['name'] == retry_tool]
                 advice_style = ""
-                if advisory_question(question):
+                if guidance_turn:
                     advice_style = (
                         "\nGENERAL GUIDANCE TURN: answer the customer's actual question first, in 2-3 short "
                         "sentences and no more than 70 words unless they explicitly request detail. Avoid headings "
                         "and bullets unless requested. Use qualified language for general tendencies. Do not invent "
-                        "catalog facts, assume an instrument type, prescribe physical exercises, promise that an "
+                        "catalog facts or name specific catalog models without verified tool evidence, assume an "
+                        "instrument type, prescribe physical exercises, promise that an "
                         "instrument will not hurt, or claim one choice is best for everyone. Ask at most one useful "
                         "follow-up question.\n")
                 try:
@@ -611,7 +651,7 @@ class Agent:
                 self._emit({"event": "model_response", "text": reply.text,
                             "calls": [{"name": c.name, "arguments": c.arguments} for c in reply.calls]})
                 if not reply.calls:
-                    if (advisory_question(question) and not retried_advice
+                    if (guidance_turn and not retried_advice
                             and len(re.findall(r'\b[\w-]+\b', reply.text)) > 80):
                         retried_advice = True
                         rejected_advice = copy.deepcopy(reply.native)
@@ -636,7 +676,7 @@ class Agent:
                         message.get('role') == 'tool' and message.get('name') == 'lookup_order'
                         and message.get('result', {}).get('status') == 'ok'
                         for exchange in self._turns for message in exchange))
-                    if not current_results and not prior_authorized_order and not advisory_question(question):
+                    if not current_results and not prior_authorized_order and not guidance_turn:
                         return self._failure('unverified', language, called)
                     if not current_results and re.search(
                             r'nao (?:encontr|localiz|exist)|not found|couldn.t find|does not exist|not in (?:the )?catalog',

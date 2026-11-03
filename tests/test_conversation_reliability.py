@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 from app.agent import Agent
 from app.catalog_references import resolve_list_reference
-from app.conversation import memory_exchange
+from app.conversation import memory_exchange, advisory_question, contextual_advisory_question, purchase_interest
 from app.diagnostics import developer_observer, summarize_event
 from app.providers import ProviderConfig, ProviderReply, ToolCall, ProviderError, create_provider, OllamaProvider
 from app.synthetic import SyntheticTools
@@ -59,6 +59,41 @@ class ReliabilityTests(unittest.TestCase):
             with self.subTest(question=question):
                 self.assertEqual(agent.run(question).status, 'answered')
         self.assertEqual(provider.complete.call_count, 0)
+
+    def test_contextual_guidance_after_preferences_stays_conversational(self):
+        agent, provider = self.agent([
+            text('Dá para explorar diferentes instrumentos sem escolher agora.'),
+            text('Claro. Posso explicar as diferenças gerais e você decide no seu tempo.'),
+        ])
+        agent.run('Boa tarde, sou novo por aqui e fico meio perdido com tantos instrumentos.')
+        preference = 'Gosto de som grave, mas queria algo fácil de levar na mochila. O que faz mais sentido explorar?'
+        self.assertTrue(advisory_question(preference))
+        first = agent.run(preference)
+        answer = agent.run('Vocês conseguem explicar as diferenças sem eu decidir agora?')
+        self.assertEqual(first.status, 'answered')
+        self.assertEqual(answer.status, 'answered')
+        self.assertNotIn('confirmar os dados', answer.text.casefold())
+        self.assertEqual(answer.tools_called, ())
+        self.assertEqual(provider.complete.call_count, 2)
+
+    def test_contextual_guidance_variants_do_not_hide_factual_requests(self):
+        history = ['Gosto de som grave e estou conhecendo os instrumentos antes de escolher.']
+        for question in ('Pode me contar as diferenças antes de eu escolher?',
+                         'Me explica as opções com calma, ainda não vou decidir.'):
+            with self.subTest(question=question):
+                self.assertTrue(contextual_advisory_question(question, history))
+        self.assertFalse(contextual_advisory_question('Quanto custa o modelo de aço?', history))
+
+    def test_carrying_a_product_is_not_purchase_intent_but_explicit_take_is(self):
+        self.assertFalse(purchase_interest(
+            'Gosto de som grave, mas precisava de algo fácil de levar na mochila. O que faz mais sentido explorar?'))
+        self.assertTrue(advisory_question(
+            'Gosto de som grave, mas precisava de algo fácil de levar na mochila. O que faz mais sentido explorar?'))
+        self.assertTrue(purchase_interest('Quero levar o Violão Sintético Aço.'))
+
+    def test_exact_catalog_model_guidance_requires_verified_product_evidence(self):
+        self.assertEqual(self.tools.required_evidence(
+            'O que você pode me dizer sobre o Violão Sintético Nylon?'), 'get_product')
 
     def test_deterministic_conversational_answers_are_retained_for_followups(self):
         agent, provider = self.agent([text('Posso comparar os tipos de instrumento conforme o som e o orçamento.')])
@@ -201,10 +236,13 @@ class ReliabilityTests(unittest.TestCase):
     def test_colloquial_catalog_fillers_do_not_become_search_terms(self):
         first = self.tools.prepare_arguments('search_products', {}, 'Tem violão sintético por aí?')
         second = self.tools.prepare_arguments('search_products', {}, 'Me passa a lista completa, do mais em conta pro mais caro.')
+        third = self.tools.prepare_arguments('search_products', {}, 'Agora pode mostrar os violões de aço disponíveis?')
         self.assertEqual(first['query'], 'sintetico')
         self.assertEqual(second['query'], '')
+        self.assertEqual(third['query'], 'aco')
         self.assertTrue(second['all_results'])
         self.assertEqual([p['product_id'] for p in self.tools.execute('search_products', first)['data']['products']], [1, 3])
+        self.assertEqual([p['product_id'] for p in self.tools.execute('search_products', third)['data']['products']], [3])
 
     def test_conversational_rephrasings_need_no_business_tool(self):
         for question in ('Oiê!', 'E aí, tudo certo?', 'Cheguei agora. Como vocês podem me dar uma força?',
@@ -417,6 +455,25 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(result.status, 'answered')
         self.assertIn('Violão Sintético Nylon', result.text)
         self.assertEqual(result.tools_called, ())  # Reuses the authorized service result from this session.
+        self.assertEqual(provider.complete.call_count, calls_before_followup)
+
+    def test_tracking_field_followup_reuses_only_the_prior_authorized_order(self):
+        from app.grounding import order_record_followup
+        for question in ('O código de rastreio está preenchido?',
+                         'O cadastro mostra algum código de rastreamento?',
+                         'O rastreio tem algum código registrado?'):
+            with self.subTest(question=question):
+                self.assertTrue(order_record_followup(question))
+        agent, provider = self.agent([call('lookup_order', order_id=1), text()])
+        first = agent.run('Você pode consultar o pedido de demonstração vinculado a esta sessão?')
+        self.assertEqual(first.status, 'answered')
+        calls_before_followup = provider.complete.call_count
+
+        answer = agent.run('O código de rastreio está preenchido?')
+
+        self.assertEqual(answer.status, 'answered')
+        self.assertIn('não informado', answer.text.casefold())
+        self.assertEqual(answer.tools_called, ())
         self.assertEqual(provider.complete.call_count, calls_before_followup)
 
     def test_order_instrument_reference_without_order_context_asks_clarification(self):
