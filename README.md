@@ -360,8 +360,8 @@ No data is silently routed from Ollama to Gemini.
 - Authorized order outputs omit customer IDs, names, contacts, addresses, payment
   details, and notes. Foreign/nonexistent/malformed orders share one denial body.
   There are no order mutation, refund, cancellation, shipment, or identity tools.
-- Tool outputs are minimized: five catalog preview entries (or every match on
-  an explicit all-results request), authorized order lines, four policy excerpts of
+- Tool outputs are minimized: catalog searches return the full sorted match set
+  (the interface paginates), authorized order lines, four policy excerpts of
   500 characters, and a 12K-character result ceiling. Truncation is marked and
   never presented as complete. Category, availability, budget, sorting, and
   catalog-list wording are enforced in Python. Source references, quality warnings, and unknown fields are retained.
@@ -379,6 +379,16 @@ No data is silently routed from Ollama to Gemini.
   Python code. Context is in memory only; old turns may be forgotten.
 - HTTP 429/errors stop without retries, automatic provider switching, or a paid
   fallback. Free availability/quotas can change. No model weights are bundled.
+- Purchase conversations keep an explicit per-session state (selected product,
+  shown list, category, purchase interest, quantity). Stock and prices in those
+  answers come from the Python services; nothing is ordered or reserved.
+- Known limitation (measured with qwen3:4b-instruct): when a turn needs catalog
+  data, the model sometimes answers in prose without calling a tool. Such answers
+  are rejected (they can contain invented products and prices), so the customer
+  sees a request to rephrase instead. This is most visible after a purchase
+  conversation when the customer switches to another category, and in follow-ups
+  such as "show me all the options then", where carrying over the previous
+  category depends on the model sending it.
 
 ## Testing and verification
 
