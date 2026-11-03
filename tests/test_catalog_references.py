@@ -3,7 +3,7 @@ from unittest.mock import Mock
 
 from app.agent import Agent
 from app.catalog_references import resolve_list_reference
-from app.providers import ProviderReply, ToolCall
+from app.providers import OllamaProvider, ProviderConfig, ProviderReply, ToolCall
 from app.synthetic import SyntheticTools
 from tests.helpers import mock_shop_scope
 
@@ -39,6 +39,55 @@ class CatalogReferenceTests(unittest.TestCase):
         self.assertEqual(resolve_list_reference('itens 1 e 2', (81,143))[0], 'produto ID 81, produto ID 143')
         self.assertEqual(resolve_list_reference('pedido 2', (81, 143)), ('pedido 2', None))
         self.assertEqual(resolve_list_reference('item 1 do pedido 2', (81, 143)), ('item 1 do pedido 2', None))
+
+    def test_conflicting_list_position_and_exact_product_name_is_clarified(self):
+        from dataclasses import replace
+        mock_shop_scope(self)
+        with SyntheticTools() as tools:
+            nylon = replace(tools._catalog.get_product(1), name='Kala KA-B Barítono Mogno')
+            tagima = replace(tools._catalog.get_product(2), name='Tagima Classical Elétrico Nylon Sunburst')
+            provider = OllamaProvider(ProviderConfig(provider='ollama', model='qwen3:4b'))
+            agent = Agent(provider, tools)
+            agent._catalog_product_ids = (nylon.product_id, tagima.product_id)
+            with unittest.mock.patch.object(tools._catalog.repository, 'products', {
+                    nylon.product_id: nylon, tagima.product_id: tagima}):
+                result = agent.run('Quero saber mais sobre o item 1: Tagima Classical Elétrico Nylon Sunburst.')
+            self.assertEqual(result.status, 'answered')
+            self.assertIn('item 1', result.text.casefold())
+            self.assertIn(nylon.name, result.text)
+            self.assertIn(tagima.name, result.text)
+            self.assertEqual(result.tools_called, ())
+            self.assertFalse(provider._checked)
+
+    def test_item_detail_requests_use_deterministic_catalog_evidence(self):
+        mock_shop_scope(self)
+        with SyntheticTools() as tools:
+            provider = OllamaProvider(ProviderConfig(provider='ollama', model='qwen3:4b'))
+            agent = Agent(provider, tools)
+            # Position 2 in the customer's latest verified list points to product 3.
+            agent._catalog_product_ids = (1, 3)
+            product = tools._catalog.get_product(3)
+            result = agent.run('Gostaria de saber mais sobre o item 2.')
+            self.assertEqual(result.status, 'answered')
+            self.assertEqual(result.tools_called, ('get_product',))
+            self.assertIn(product.name, result.text)
+            self.assertIn(tools._catalog.repository.categories[product.category_id].name, result.text)
+            self.assertIn(str(product.stock_quantity), result.text)
+            self.assertFalse(provider._checked)
+
+    def test_named_product_details_use_deterministic_catalog_evidence(self):
+        mock_shop_scope(self)
+        with SyntheticTools() as tools:
+            product = tools._catalog.get_product(1)
+            provider = OllamaProvider(ProviderConfig(provider='ollama', model='qwen3:4b'))
+            agent = Agent(provider, tools)
+            result = agent.run(f'Quero saber mais sobre {product.name}.')
+            self.assertEqual(result.status, 'answered')
+            self.assertEqual(result.tools_called, ('get_product',))
+            self.assertIn(product.name, result.text)
+            self.assertIn(tools._catalog.repository.categories[product.category_id].name, result.text)
+            self.assertIn(str(product.stock_quantity), result.text)
+            self.assertFalse(provider._checked)
 
     def test_list_followup_uses_ordered_product_ids_and_reset_clears_mapping(self):
         mock_shop_scope(self)

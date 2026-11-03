@@ -10,8 +10,7 @@ def resolve_list_reference(question, product_ids):
         return question, None
     plural = r'\b(?:itens|produtos|items|products)\s+(\d{1,12}(?:\s*(?:,|e\b|and\b|&)\s*\d{1,12})*)\b'
     singular = r'\b(item|produto|product)\s+(\d{1,12})\b'
-    positions = [int(m[2]) for m in re.finditer(singular, question, re.IGNORECASE)]
-    positions += [int(n) for m in re.finditer(plural, question, re.IGNORECASE) for n in re.findall(r'\d+', m[1])]
+    positions = list(explicit_list_positions(question))
     ordinal_map = {'primeiro': 1, 'primeira': 1, 'segundo': 2, 'segunda': 2,
                    'terceiro': 3, 'terceira': 3, 'quarto': 4, 'quarta': 4,
                    'first': 1, 'second': 2, 'third': 3, 'fourth': 4}
@@ -32,3 +31,15 @@ def resolve_list_reference(question, product_ids):
         return f'{label} ID {product_ids[int(position)-1]}'
     resolved = re.sub(plural, lambda m: ', '.join(one(n) for n in re.findall(r'\d+', m[1])), question, flags=re.IGNORECASE)
     return re.sub(singular, lambda m: one(m[2]), resolved, flags=re.IGNORECASE), None
+
+
+def explicit_list_positions(question):
+    """Extract numeric list positions without treating source IDs as positions."""
+    if re.search(r'\b(?:pedido|order)\b', question, re.IGNORECASE):
+        return ()
+    plural = r'\b(?:itens|produtos|items|products)\s+(\d{1,12}(?:\s*(?:,|e\b|and\b|&)\s*\d{1,12})*)\b'
+    singular = r'\b(item|produto|product)\s+(\d{1,12})\b'
+    positions = [int(match[2]) for match in re.finditer(singular, question, re.IGNORECASE)]
+    positions.extend(int(number) for match in re.finditer(plural, question, re.IGNORECASE)
+                     for number in re.findall(r'\d+', match[1]))
+    return tuple(positions)

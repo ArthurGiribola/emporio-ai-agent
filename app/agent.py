@@ -9,7 +9,7 @@ from app.cloud_privacy import project_synthetic_question
 from app.synthetic import SyntheticTools
 from app.tool_runtime import ToolRuntime
 from app.scope import assess_scope, scope_message, language_hint
-from app.catalog_references import resolve_list_reference
+from app.catalog_references import resolve_list_reference, explicit_list_positions
 from app.grounding import catalog_question, requested_product_ids, requested_order_id, order_record_followup, order_items_followup, wants_all, english_question
 from app.return_policy import online_return_question, elapsed_followup_days, elapsed_receipt_days
 from app.catalog_view import CatalogView, build_catalog_view
@@ -204,6 +204,8 @@ class Agent:
             r'\b(?:preco\w*|valor|quanto|custa|sai|fica|price|cost|pix|desconto|promoc\w*)\b', text))
         stock_signal = bool(re.search(
             r'\b(?:estoque|stock|dispon\w*|unidade\w*|sobrando|cobre|quantidade)\b', text))
+        detail_signal = bool(re.search(
+            r'\b(?:saber mais|mais sobre|detalhes?|informac\w*|tell me more|more about|details?)\b', text))
         comparison = bool(re.search(
             r'\b(?:compar\w*|compare|versus|\bvs\b|diferenc\w*|differences?)\b', text))
 
@@ -212,6 +214,8 @@ class Agent:
                 return tool, references
         if (tool == 'get_product' and len(references) == 1 and stock_signal
                 and (requested_quantity(question) is not None or not comparison)):
+            return tool, references
+        if tool == 'get_product' and len(references) == 1 and detail_signal and not comparison:
             return tool, references
         # Purchase intent with an explicitly named product and quantity also
         # has a deterministic stock answer, even when the customer didn't say
@@ -608,6 +612,24 @@ class Agent:
                     and not requested_order_id(question)):
                 question += f'\nPedido {self._order_id}.'
             # One bounded scope request precedes the unchanged business-request budget.
+            # If a customer gives both a list position and an exact product name,
+            # do not silently let the position override the named record. A
+            # mismatch is clarified before any product facts are returned.
+            explicit_names = [product for product in self._tools._catalog.repository.products.values()
+                              if normalize(product.name) in normalize(question)]
+            positions = explicit_list_positions(question)
+            if len(positions) == 1 and len(explicit_names) == 1:
+                position = positions[0]
+                if 1 <= position <= len(self._catalog_product_ids):
+                    listed_id = self._catalog_product_ids[position - 1]
+                    named_product = explicit_names[0]
+                    if listed_id != named_product.product_id:
+                        listed_name = self._tools._catalog.get_product(listed_id).name
+                        clarification = (
+                            f'Item {position} in the current list is **{listed_name}**; **{named_product.name}** is a different product. Which one would you like me to check?'
+                            if language == 'en' else
+                            f'O item {position} da lista atual é **{listed_name}**; **{named_product.name}** é outro produto. Qual deles você quer consultar?')
+                        return self._plain(question, history, clarification)
             question, clarification = resolve_list_reference(question, self._catalog_product_ids)
             if clarification:
                 return self._plain(question, history, clarification)
