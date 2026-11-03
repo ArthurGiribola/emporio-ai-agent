@@ -1,0 +1,119 @@
+{
+ "version": 1,
+ "frozen": "2026-11-03, before the orchestration redesign. Expectations describe what a competent shop assistant must achieve; change one only if it is demonstrably wrong, never to make a run pass.",
+ "data": "fictional 65-product catalog from tests/task_fixtures.py (no private data)",
+ "references": "$pos:N = Nth item of the last list the customer saw; $selected = product clicked in the UI; $name:X = catalog product named X; {ref} inside user text is replaced by that product's name. 'oracle' scripts the ideal model for --stub oracle only.",
+ "scenarios": [
+  {"id": "original_transcript", "set": "dev", "intent": "mixed", "turns": [
+   {"user": "ola gostaria de ver os produtos disponiveis", "oracle": {"calls": [{"name": "search_products", "arguments": {}}]}, "expect": {"catalog": "all_available"}},
+   {"user": "Liste o catálogo completo, incluindo produtos indisponíveis e inativos, do mais barato ao mais caro.", "oracle": {"calls": [{"name": "search_products", "arguments": {"available_only": false, "all_results": true}}]}, "expect": {"catalog": "all"}},
+   {"user": "catalogo completo porfavor", "oracle": {"calls": [{"name": "search_products", "arguments": {"all_results": true}}]}, "expect": {"catalog": "all_available"}},
+   {"user": "me apresente o catalogo completo porfavor", "oracle": {"calls": [{"name": "search_products", "arguments": {"all_results": true}}]}, "expect": {"catalog": "all_available"}},
+   {"user": "ola", "oracle": {"text": "Oi! Como posso ajudar?"}, "expect": {"no_tools": true}},
+   {"user": "gostaria de fazer uma compra", "oracle": {"text": "Que ótimo! Qual instrumento você procura?"}, "expect": {"asks_question": true, "forbid_tools": ["lookup_order", "search_policies"]}},
+   {"user": "gostaria de comprar o produto 2", "oracle": {"calls": [{"name": "get_product", "arguments": {"product_id": "$pos:2"}}]}, "expect": {"shows_product": "$pos:2", "asks_quantity": true}},
+   {"user": "Liste o catálogo completo, incluindo produtos indisponíveis e inativos, do mais barato ao mais caro.", "oracle": {"calls": [{"name": "search_products", "arguments": {"available_only": false, "all_results": true}}]}, "expect": {"catalog": "all"}},
+   {"user": "@select 3"},
+   {"user": "Quero saber mais sobre o item 3: {$selected}.", "oracle": {"calls": [{"name": "get_product", "arguments": {"product_id": "$selected"}}]}, "expect": {"shows_product": "$selected", "consults_product": "$selected"}},
+   {"user": "gostaria de comprar ele porfavor", "oracle": {"text": "Ótimo! Quantas unidades você quer?"}, "expect": {"shows_product": "$selected", "asks_quantity": true, "no_repeat_card": true}},
+   {"user": "quero comprar um {$selected}", "oracle": {"calls": [{"name": "get_product", "arguments": {"product_id": "$selected"}}]}, "expect": {"consults_product": "$selected", "no_repeat_card": true, "grammatical_quantity": true}}
+  ]},
+  {"id": "browse_courtesy", "set": "dev", "intent": "browse", "turns": [
+   {"user": "catálogo completo por gentileza", "oracle": {"calls": [{"name": "search_products", "arguments": {"all_results": true}}]}, "expect": {"catalog": "all_available"}}]},
+  {"id": "browse_greeting_first", "set": "dev", "intent": "browse", "turns": [
+   {"user": "bom dia, quero ver os produtos", "oracle": {"calls": [{"name": "search_products", "arguments": {"all_results": true}}]}, "expect": {"catalog": "all_available"}}]},
+  {"id": "browse_what_do_you_sell", "set": "dev", "intent": "browse", "turns": [
+   {"user": "o que vcs vendem?", "oracle": {"calls": [{"name": "search_products", "arguments": {"all_results": true}}]}, "expect": {"catalog": "all_available"}}]},
+  {"id": "browse_slang", "set": "dev", "intent": "browse", "turns": [
+   {"user": "mostra os produtos ai pra mim", "oracle": {"calls": [{"name": "search_products", "arguments": {"all_results": true}}]}, "expect": {"catalog": "all_available"}}]},
+  {"id": "filter_category", "set": "dev", "intent": "filters", "turns": [
+   {"user": "quais ukuleles vocês têm?", "oracle": {"calls": [{"name": "search_products", "arguments": {"category_id": 4, "all_results": true}}]}, "expect": {"catalog": {"category": "Ukuleles"}}}]},
+  {"id": "filter_budget", "set": "dev", "intent": "filters", "turns": [
+   {"user": "violões até 800 reais", "oracle": {"calls": [{"name": "search_products", "arguments": {"category_id": 1, "max_price_brl": "800", "all_results": true}}]}, "expect": {"catalog": {"category": "Violões", "max_price": 800}}}]},
+  {"id": "filter_brand", "set": "dev", "intent": "filters", "turns": [
+   {"user": "tem alguma coisa da Kaiwa?", "oracle": {"calls": [{"name": "search_products", "arguments": {"query": "Kaiwa", "all_results": true}}]}, "expect": {"catalog": {"brand": "Kaiwa"}}}]},
+  {"id": "empty_search_keeps_list", "set": "dev", "intent": "references", "turns": [
+   {"user": "Liste o catálogo completo, incluindo produtos indisponíveis e inativos, do mais barato ao mais caro.", "oracle": {"calls": [{"name": "search_products", "arguments": {"available_only": false, "all_results": true}}]}, "expect": {"catalog": "all"}},
+   {"user": "tem guitarra da marca Zuperson?", "oracle": {"calls": [{"name": "search_products", "arguments": {"query": "Zuperson", "category_id": 2}}]}, "expect": {}},
+   {"user": "ok, então me fala do item 5", "oracle": {"calls": [{"name": "get_product", "arguments": {"product_id": "$pos:5"}}]}, "expect": {"shows_product": "$pos:5"}}
+  ]},
+  {"id": "purchase_selected_then_quantity", "set": "dev", "intent": "purchase", "turns": [
+   {"user": "Liste o catálogo completo, incluindo produtos indisponíveis e inativos, do mais barato ao mais caro.", "oracle": {"calls": [{"name": "search_products", "arguments": {"available_only": false, "all_results": true}}]}, "expect": {"catalog": "all"}},
+   {"user": "@select 5"},
+   {"user": "Quero saber mais sobre o item 5: {$selected}.", "oracle": {"calls": [{"name": "get_product", "arguments": {"product_id": "$selected"}}]}, "expect": {"shows_product": "$selected"}},
+   {"user": "quero levar esse", "oracle": {"text": "Ótimo! Quantas unidades você quer?"}, "expect": {"shows_product": "$selected", "asks_quantity": true, "no_repeat_card": true}},
+   {"user": "2 unidades", "oracle": {"calls": [{"name": "get_product", "arguments": {"product_id": "$selected"}}]}, "expect": {"consults_product": "$selected", "mentions": ["\\b2\\b"], "no_catalog_search": true}},
+   {"user": "e quanto fica no pix?", "oracle": {"calls": [{"name": "get_price_quote", "arguments": {"product_id": "$selected", "payment_method": "pix"}}]}, "expect": {"consults_product": "$selected"}}
+  ]},
+  {"id": "quantity_exceeds_stock", "set": "dev", "intent": "purchase", "turns": [
+   {"user": "Liste o catálogo completo, incluindo produtos indisponíveis e inativos, do mais barato ao mais caro.", "oracle": {"calls": [{"name": "search_products", "arguments": {"available_only": false, "all_results": true}}]}, "expect": {"catalog": "all"}},
+   {"user": "@select 7"},
+   {"user": "Quero saber mais sobre o item 7: {$selected}.", "oracle": {"calls": [{"name": "get_product", "arguments": {"product_id": "$selected"}}]}, "expect": {"shows_product": "$selected"}},
+   {"user": "quero 5 desse", "oracle": {"calls": [{"name": "get_product", "arguments": {"product_id": "$selected"}}]}, "expect": {"consults_product": "$selected", "mentions": ["\\b2\\b"], "no_catalog_search": true}}
+  ]},
+  {"id": "purchase_no_product_yet", "set": "dev", "intent": "purchase", "turns": [
+   {"user": "quero fazer um pedido", "oracle": {"text": "Claro! Qual instrumento você procura?"}, "expect": {"asks_question": true, "forbid_tools": ["lookup_order"]}},
+   {"user": "um ukulele", "oracle": {"calls": [{"name": "search_products", "arguments": {"category_id": 4, "all_results": true}}]}, "expect": {"catalog": {"category": "Ukuleles"}}}
+  ]},
+  {"id": "ordinal_reference", "set": "dev", "intent": "references", "turns": [
+   {"user": "Liste o catálogo completo, incluindo produtos indisponíveis e inativos, do mais barato ao mais caro.", "oracle": {"calls": [{"name": "search_products", "arguments": {"available_only": false, "all_results": true}}]}, "expect": {"catalog": "all"}},
+   {"user": "quero o terceiro", "oracle": {"calls": [{"name": "get_product", "arguments": {"product_id": "$pos:3"}}]}, "expect": {"shows_product": "$pos:3"}},
+   {"user": "e o sexto?", "oracle": {"calls": [{"name": "get_product", "arguments": {"product_id": "$pos:6"}}]}, "expect": {"shows_product": "$pos:6"}}
+  ]},
+  {"id": "ambiguous_brand_reference", "set": "dev", "intent": "references", "turns": [
+   {"user": "quero o Kaiwa Soprano", "oracle": {"text": "Temos mais de um Kaiwa Soprano. Qual deles você quer?"}, "expect": {"asks_question": true, "not_specific_product": true}}]},
+  {"id": "compare_two_positions", "set": "dev", "intent": "references", "turns": [
+   {"user": "Liste o catálogo completo, incluindo produtos indisponíveis e inativos, do mais barato ao mais caro.", "oracle": {"calls": [{"name": "search_products", "arguments": {"available_only": false, "all_results": true}}]}, "expect": {"catalog": "all"}},
+   {"user": "compara o item 1 com o item 3", "oracle": {"calls": [{"name": "get_product", "arguments": {"product_id": "$pos:1"}}, {"name": "get_product", "arguments": {"product_id": "$pos:3"}}]}, "expect": {"consults_products": ["$pos:1", "$pos:3"], "shows_product": "$pos:3"}}
+  ]},
+  {"id": "authorized_order", "set": "dev", "intent": "order", "turns": [
+   {"user": "qual o status do meu pedido?", "oracle": {"calls": [{"name": "lookup_order", "arguments": {"order_id": 1}}]}, "expect": {"mentions": ["envi"]}},
+   {"user": "e o que veio nele?", "oracle": {"calls": [{"name": "lookup_order", "arguments": {"order_id": 1}}]}, "expect": {"mentions": ["Eclipse Strato ST-100 Preta"]}}
+  ]},
+  {"id": "beginner_conversation", "set": "dev", "intent": "conversation", "turns": [
+   {"user": "oi, tudo bem?", "oracle": {"text": "Oi! Tudo ótimo. Como posso ajudar?"}, "expect": {"no_tools": true}},
+   {"user": "nunca toquei nada, por onde eu começo?", "oracle": {"text": "Que legal começar! Que estilo de música você curte?"}, "expect": {"asks_question": true}}
+  ]},
+  {"id": "pix_policy", "set": "dev", "intent": "policy", "turns": [
+   {"user": "o desconto do pix soma com promoção?", "oracle": {"calls": [{"name": "search_policies", "arguments": {"query": "pix promoção"}}], "text": "Não. O desconto do PIX não se soma a uma promoção ativa, conforme a política da loja."}, "expect": {"mentions": ["\\bn[aã]o\\b"]}}]},
+
+  {"id": "h_browse_whole", "set": "holdout", "intent": "browse", "turns": [
+   {"user": "quero ver o catálogo inteiro", "oracle": {"calls": [{"name": "search_products", "arguments": {"all_results": true}}]}, "expect": {"catalog": "all_available"}}]},
+  {"id": "h_browse_list_thanks", "set": "holdout", "intent": "browse", "turns": [
+   {"user": "pfv me passa a lista de tudo que tem, valeu", "oracle": {"calls": [{"name": "search_products", "arguments": {"all_results": true}}]}, "expect": {"catalog": "all_available"}}]},
+  {"id": "h_browse_what_is_there", "set": "holdout", "intent": "browse", "turns": [
+   {"user": "vocês têm o quê aí na loja?", "oracle": {"calls": [{"name": "search_products", "arguments": {"all_results": true}}]}, "expect": {"catalog": "all_available"}}]},
+  {"id": "h_filter_bass_budget", "set": "holdout", "intent": "filters", "turns": [
+   {"user": "baixos de até 1500, por favor", "oracle": {"calls": [{"name": "search_products", "arguments": {"category_id": 3, "max_price_brl": "1500", "all_results": true}}]}, "expect": {"catalog": {"category": "Baixos", "max_price": 1500}}}]},
+  {"id": "h_purchase_help", "set": "holdout", "intent": "purchase", "turns": [
+   {"user": "to querendo comprar, me ajuda?", "oracle": {"text": "Claro! Que instrumento você procura?"}, "expect": {"asks_question": true, "forbid_tools": ["lookup_order"]}}]},
+  {"id": "h_selected_buy_two", "set": "holdout", "intent": "purchase", "turns": [
+   {"user": "Liste o catálogo completo, incluindo produtos indisponíveis e inativos, do mais barato ao mais caro.", "oracle": {"calls": [{"name": "search_products", "arguments": {"available_only": false, "all_results": true}}]}, "expect": {"catalog": "all"}},
+   {"user": "@select 8"},
+   {"user": "Quero saber mais sobre o item 8: {$selected}.", "oracle": {"calls": [{"name": "get_product", "arguments": {"product_id": "$selected"}}]}, "expect": {"shows_product": "$selected"}},
+   {"user": "fechado, vou levar dois", "oracle": {"calls": [{"name": "get_product", "arguments": {"product_id": "$selected"}}]}, "expect": {"consults_product": "$selected", "no_catalog_search": true, "forbid_tools": ["search_policies"]}},
+   {"user": "e esse tem garantia?", "oracle": {"calls": [{"name": "search_policies", "arguments": {"query": "garantia"}}]}, "expect": {}}
+  ]},
+  {"id": "h_second_in_list", "set": "holdout", "intent": "references", "turns": [
+   {"user": "Liste o catálogo completo, incluindo produtos indisponíveis e inativos, do mais barato ao mais caro.", "oracle": {"calls": [{"name": "search_products", "arguments": {"available_only": false, "all_results": true}}]}, "expect": {"catalog": "all"}},
+   {"user": "me fala mais do segundo", "oracle": {"calls": [{"name": "get_product", "arguments": {"product_id": "$pos:2"}}]}, "expect": {"shows_product": "$pos:2"}},
+   {"user": "e quanto custa o primeiro da lista?", "oracle": {"calls": [{"name": "get_price_quote", "arguments": {"product_id": "$pos:1"}}]}, "expect": {"consults_product": "$pos:1"}}
+  ]},
+  {"id": "h_bare_number", "set": "holdout", "intent": "references", "turns": [
+   {"user": "Liste o catálogo completo, incluindo produtos indisponíveis e inativos, do mais barato ao mais caro.", "oracle": {"calls": [{"name": "search_products", "arguments": {"available_only": false, "all_results": true}}]}, "expect": {"catalog": "all"}},
+   {"user": "quero o 4", "oracle": {"calls": [{"name": "get_product", "arguments": {"product_id": "$pos:4"}}]}, "expect": {"shows_product": "$pos:4"}}
+  ]},
+  {"id": "h_selected_stock_question", "set": "holdout", "intent": "references", "turns": [
+   {"user": "Liste o catálogo completo, incluindo produtos indisponíveis e inativos, do mais barato ao mais caro.", "oracle": {"calls": [{"name": "search_products", "arguments": {"available_only": false, "all_results": true}}]}, "expect": {"catalog": "all"}},
+   {"user": "@select 10"},
+   {"user": "Quero saber mais sobre o item 10: {$selected}.", "oracle": {"calls": [{"name": "get_product", "arguments": {"product_id": "$selected"}}]}, "expect": {"shows_product": "$selected"}},
+   {"user": "e tem 3 unidades dele?", "oracle": {"calls": [{"name": "get_product", "arguments": {"product_id": "$selected"}}]}, "expect": {"consults_product": "$selected", "no_catalog_search": true}}
+  ]},
+  {"id": "h_greeting_then_browse", "set": "holdout", "intent": "browse", "turns": [
+   {"user": "eae, beleza?", "oracle": {"text": "Beleza! Como posso ajudar?"}, "expect": {"no_tools": true}},
+   {"user": "manda o catálogo todo ai", "oracle": {"calls": [{"name": "search_products", "arguments": {"all_results": true}}]}, "expect": {"catalog": "all_available"}}
+  ]},
+  {"id": "h_new_order_intent", "set": "holdout", "intent": "purchase", "turns": [
+   {"user": "queria encomendar um teclado", "oracle": {"calls": [{"name": "search_products", "arguments": {"category_id": 5, "all_results": true}}]}, "expect": {"forbid_tools": ["lookup_order"], "catalog": {"category": "Teclados"}}}]}
+ ]
+}
