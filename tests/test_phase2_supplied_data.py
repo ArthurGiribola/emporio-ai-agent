@@ -1,14 +1,16 @@
 """Original-resource checks: no restricted text or personal records are copied."""
 
 import os
+import re
 import unittest
 from dataclasses import asdict
 from decimal import Decimal
 from pathlib import Path
 
 from app.orders import DemoSessionConfig, OrderService
-from app.policies import HEADINGS, PolicyRetriever
+from app.policies import HEADINGS, PolicyRetriever, normalize
 from app.repository import Repository, SCHEMAS
+from app.tool_runtime import ToolRuntime
 
 
 DATA = Path(os.environ.get("EMPORIO_DATA_DIR", Path(__file__).resolve().parents[1] / "data"))
@@ -53,6 +55,25 @@ class OriginalPolicyTests(unittest.TestCase):
                 result = self.retriever.search(question)
                 self.assertNotEqual(result.status, "insufficient_evidence")
                 self.assertTrue(expected <= {s.number for s in result.sections})
+
+    def test_store_location_retrieves_company_source_without_embedding_private_value(self):
+        for question in ('Qual é o endereço da loja?', 'Onde fica a loja?', 'Como chegar à loja?'):
+            with self.subTest(question=question):
+                result = self.retriever.search(question)
+                section = next((item for item in result.sections if item.number == '1.2'), None)
+                self.assertIsNotNone(section)
+                self.assertEqual(section.pages, (2,))
+                self.assertRegex(section.text, r'(?i)\bRua\b.*\bMS\b.*\b\d{5}-\d{3}\b')
+        repository = Repository(DATA)
+        tools = ToolRuntime(repository, self.retriever, OrderService(repository))
+        evidence = tools.execute('search_policies', {'query': 'Qual é o endereço da loja?'})
+        answer = tools.grounded_answer('Qual é o endereço da loja?', [('search_policies', evidence)],
+                                       'Untrusted extra phone/email details.')
+        section = next(item for item in evidence['data']['sections'] if item['section'] == '1.2')
+        address = re.search(r'(?i)\bendereço\s+(.+?)(?=\s+(?:telefone\b|whatsapp\b|e-mail\b|email\b))', section['text']).group(1).strip(' \t\r\n,;.')
+        self.assertTrue(normalize(address) in normalize(answer))
+        self.assertNotIn('@', answer)
+        self.assertNotIn('telefone', normalize(answer))
 
     def test_actual_ambiguities_and_consistent_tracking_format(self):
         codes = {i.code for i in self.retriever.issues}

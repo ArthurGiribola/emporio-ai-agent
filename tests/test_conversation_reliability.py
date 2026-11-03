@@ -290,6 +290,62 @@ class ReliabilityTests(unittest.TestCase):
         self.assertFalse(purchase_interest(policy_question))
         self.assertTrue(purchase_interest('Queria comprar dois instrumentos.'))
 
+    def test_store_address_and_location_variants_require_policy_evidence(self):
+        for question in ('Qual é o endereço físico da loja?', 'Onde fica a loja?',
+                         'Em qual localização vocês atendem?', 'Como chegar à loja?'):
+            with self.subTest(question=question):
+                self.assertEqual(self.tools.required_evidence(question), 'search_policies')
+                evidence = self.tools.execute('search_policies', {'query': question})
+                self.assertEqual(evidence['status'], 'ok')
+                self.assertIn('1.2', {section['section'] for section in evidence['data']['sections']})
+
+    def test_address_answer_uses_only_the_retrieved_field_and_citation(self):
+        evidence = {'status': 'ok', 'data': {'sections': [{
+            'section': '1.2', 'pages': [2],
+            'text': 'Endereço Rua Teste, 7, Centro, Testópolis - XX, 00000-000 '
+                    'Telefone / WhatsApp (00) 0000-0000 E-mail demo@example.invalid'}]}}
+        answer = self.tools.grounded_answer('Onde fica a loja?', [('search_policies', evidence)],
+                                            'A loja fica na Rua Inventada. Ligue para 0000 ou escreva para falso@example.invalid.')
+        self.assertIn('Rua Teste', answer)
+        self.assertIn('seção 1.2', answer)
+        self.assertNotIn('Telefone', answer)
+        self.assertNotIn('WhatsApp', answer)
+        self.assertNotIn('@', answer)
+
+    def test_missing_address_evidence_is_reported_without_fabrication(self):
+        evidence = self.tools.execute('search_policies', {'query': 'Onde fica a loja?'})
+        answer = self.tools.grounded_answer('Onde fica a loja?', [('search_policies', evidence)],
+                                            'A loja fica na Rua Inventada, 100.')
+        self.assertIn('não encontrei um endereço confirmado', answer.casefold())
+        self.assertNotIn('Rua Inventada', answer)
+
+    def test_general_return_and_refund_variants_precede_generic_order_word(self):
+        for question in ('Me arrependi da compra; posso devolver o pedido?',
+                         'Como funciona o reembolso do meu pedido?',
+                         'Quais são as condições para pedir estorno da compra?'):
+            with self.subTest(question=question):
+                self.assertEqual(self.tools.required_evidence(question), 'search_policies')
+        for question in ('Qual o status do meu pedido?', 'Quais itens vieram no meu pedido?',
+                         'Qual foi o total do pedido 1?', 'O código de rastreio está informado?'):
+            with self.subTest(question=question):
+                self.assertEqual(self.tools.required_evidence(question), 'lookup_order')
+
+    def test_return_question_with_order_word_does_not_lookup_any_order(self):
+        agent, provider = self.agent([
+            call('search_policies', query='devolução reembolso pedido'),
+            text('A política recuperada contém as regras de devolução.')])
+        result = agent.run('Como funciona o reembolso do meu pedido?')
+        self.assertIn('search_policies', result.tools_called)
+        self.assertNotIn('lookup_order', result.tools_called)
+        self.assertGreaterEqual(provider.complete.call_count, 2)
+
+    def test_order_detail_still_uses_session_authorized_lookup(self):
+        agent, provider = self.agent([call('lookup_order', order_id=1), text()])
+        result = agent.run('Qual é o status do meu pedido?')
+        self.assertIn('lookup_order', result.tools_called)
+        self.assertEqual(self.tools._orders.lookup_order(2).status, 'unavailable')
+        self.assertEqual(provider.complete.call_count, 2)
+
     def test_first_person_purchase_history_question_uses_bound_order_service(self):
         agent, _ = self.agent([call('lookup_order', order_id=1), text()])
         result = agent.run('O que eu comprei e quanto deu no total?')

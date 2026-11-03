@@ -687,7 +687,7 @@ class Agent:
             if (not requested_product_ids(question) and len(current_named_products) > 1
                     and re.search(r'compar|\b(?:os dois|ambos|both)\b', normalize(question))):
                 question += '\n' + ', '.join(f'Produto ID {i}' for i in current_named_products)
-            if (requested_order_id(question) is None and
+            if (requested_order_id(question) is None and self._tools.required_evidence(question) == 'lookup_order' and
                     (order_record_followup(question) or re.search(r'\b(?:pedido|order|rastre\w*|tracking)\b', normalize(question)))):
                 question += f'\nPedido {self._order_id}.'
             if not requested_product_ids(question) and product_followup(question):

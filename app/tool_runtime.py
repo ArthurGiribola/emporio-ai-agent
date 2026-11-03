@@ -8,7 +8,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from app.orders import OrderService
-from app.policies import PolicyRetriever, normalize
+from app.policies import PolicyRetriever, normalize, TOPICS, ADDRESS_QUERY_PATTERN
 from app.repository import Repository
 from app.services import CatalogService, PricingConflictError
 from app.grounding import (catalog_arguments, catalog_question, requested_budget, render_catalog, wants_all,
@@ -129,14 +129,17 @@ class ToolRuntime:
             # General guidance can stay conversational, but a named record
             # still needs source evidence before the model describes it.
             return 'get_product'
-        if requested_order_id(question) is not None or order_record_followup(question) or re.search(
-                r'\b(?:pedido|order|rastre\w*|tracking)\b', text):
+        return_policy_question = bool(re.search(
+            r'\b(?:devol\w*|arrepend\w*|reembols\w*|estorn\w*|desist\w*|troc\w*)\b', text))
+        if requested_order_id(question) is not None or order_record_followup(question):
             return "lookup_order"
-        if online_return_question(question) or re.search(
+        if return_policy_question or online_return_question(question) or re.search(TOPICS["contact"][0], text) or re.search(
                 r'\b(?:pag\w*.*(?:aceit\w*|forma\w*|meio\w*)|(?:forma\w*|meio\w*).*pag\w*|'
                 r'payment methods|pix acumula|promoc\w*.*pix|pix.*promoc\w*|horario\w*|abre|fecha|'
                 r'funcionamento|complaint\w*|reclam\w*|shipping|frete|entrega)\b', text):
             return "search_policies"
+        if re.search(r'\b(?:pedido|order|rastre\w*|tracking)\b', text):
+            return "lookup_order"
         price = bool(re.search(r'\b(?:preco\w*|valor|custa|quanto|sai|fica|price|cost|how much|pix|desconto|discount|promoc\w*)\b', text))
         stock = bool(re.search(r'\b(?:estoque|stock|dispon\w*|unidade\w*|sobrando|available)\b', text))
         if requested_product_ids(question) and price:
@@ -198,6 +201,26 @@ class ToolRuntime:
             for name, result in reversed(results):
                 if name == "search_policies" and result.get("status") == "ok":
                     return render_online_return(question, result["data"])
+        if re.search(ADDRESS_QUERY_PATTERN, normalize(question)):
+            for name, result in reversed(results):
+                if name != "search_policies" or result.get("status") != "ok":
+                    continue
+                section = next((item for item in result["data"].get("sections", [])
+                                if item.get("section") == "1.2"), None)
+                if section:
+                    match = re.search(
+                        r"\bendereço\s+(.+?)(?=\s+(?:telefone\b|whatsapp\b|e-mail\b|email\b))",
+                        section.get("text", ""), re.IGNORECASE)
+                    address = match.group(1).strip(" \t\r\n,;.") if match else ""
+                    if address and not re.search(
+                            r"\b(?:não informado|nao informado|não especificado|nao especificado|not provided|not specified)\b",
+                            normalize(address)):
+                        pages = ", ".join(map(str, section.get("pages", [])))
+                        if english_question(question):
+                            return f"The store address recorded in the policy is **{address}**.\n\nSource: section 1.2, page(s) {pages}."
+                        return f"O endereço registrado na política é **{address}**.\n\nFonte: seção 1.2, página(s) {pages}."
+            return ("I could not confirm a store address in the available policy." if english_question(question) else
+                    "Não encontrei um endereço confirmado nos documentos disponíveis.")
         price_question = bool(re.search(r'\b(?:preco\w*|valor|quanto custa|custa|price|cost|how much)\b', normalize(question)))
         if price_question:
             for name, result in reversed(results):

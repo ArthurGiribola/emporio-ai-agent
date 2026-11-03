@@ -41,6 +41,8 @@ HEADINGS = {
 }
 
 # Whole-word stems are deliberate; unrelated words must not match short substrings.
+ADDRESS_QUERY_PATTERN = (r"\b(?:enderec\w*|localiz\w*)\b|\bonde (?:fica|esta|e) (?:a )?loja\b|"
+                         r"\bcomo chegar(?: a)? (?:a )?loja\b")
 TOPICS = {
     "returns": (r"\b(?:devol\w*|troc\w*|arrepend\w*|reembols\w*|ressarc\w*|estorn\w*|desist\w*)\b", ("4.1", "4.2", "4.3", "4.4")),
     "warranty": (r"\b(?:garanti\w*|defeit\w*|avari\w*|quebrad\w*|consert\w*)\b|assistencia tecnica", ("4.2", "8.1", "8.2", "8.3")),
@@ -49,7 +51,7 @@ TOPICS = {
     "promotions": (r"\b(?:promoc\w*|descont\w*|oferta\w*|cumul\w*|acumul\w*)\b|black friday", ("3", "6.1", "6.2")),
     "hours": (r"\b(?:horario\w*|abre|abrem|abrir|aberta|aberto|fecha|fecham|fechada|fechado|funcionamento|expediente|sabado|domingo|feriado\w*)\b|que horas|loja funciona", ("2",)),
     "complaints": (r"\b(?:reclam\w*|queixa\w*|insatisfeit\w*|insatisf\w*)\b", ("7.3",)),
-    "contact": (r"\b(?:telefone\w*|whatsapp|contato|email|endereco)\b|e-mail", ("1.2", "7")),
+    "contact": (rf"{ADDRESS_QUERY_PATTERN}|\b(?:telefone\w*|whatsapp|contato|email)\b|e-mail", ("1.2", "7")),
     "privacy": (r"\b(?:privacidade|lgpd)\b|dados pessoais", ("9",)),
 }
 
