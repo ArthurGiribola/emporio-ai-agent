@@ -237,12 +237,17 @@ class ReliabilityTests(unittest.TestCase):
         first = self.tools.prepare_arguments('search_products', {}, 'Tem violão sintético por aí?')
         second = self.tools.prepare_arguments('search_products', {}, 'Me passa a lista completa, do mais em conta pro mais caro.')
         third = self.tools.prepare_arguments('search_products', {}, 'Agora pode mostrar os violões de aço disponíveis?')
+        polite = self.tools.prepare_arguments('search_products', {}, 'ola, gostaria de ver os produtos disponiveis')
         self.assertEqual(first['query'], 'sintetico')
         self.assertEqual(second['query'], '')
         self.assertEqual(third['query'], 'aco')
+        self.assertEqual(polite['query'], '')
         self.assertTrue(second['all_results'])
         self.assertEqual([p['product_id'] for p in self.tools.execute('search_products', first)['data']['products']], [1, 3])
         self.assertEqual([p['product_id'] for p in self.tools.execute('search_products', third)['data']['products']], [3])
+        polite_result = self.tools.execute('search_products', polite)
+        self.assertGreater(polite_result['data']['total_matches'], 0)
+        self.assertTrue(all(product['available'] for product in polite_result['data']['products']))
 
     def test_conversational_rephrasings_need_no_business_tool(self):
         for question in ('Oiê!', 'E aí, tudo certo?', 'Cheguei agora. Como vocês podem me dar uma força?',

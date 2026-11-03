@@ -87,7 +87,7 @@ def catalog_arguments(question: str, arguments: dict, catalog) -> dict:
         " demonstration synthetic only filtered intent tokens original text withheld"
         " instrument instruments models options list show catalog full complete cheapest cheapest first lowest highest price sorted price prices preco precos valor final"
         " tiver tenham tenha haja ai por ai da pra pra pro pras pros em conta"
-        " nao manjo muito tipo por aqui beleza tranquilo certo agora"
+        " nao manjo muito tipo por aqui beleza tranquilo certo agora ola oi gostaria"
         " in stock out of stock unavailable inactive indisponiveis indisponivel inativos inativo sem estoque and or to from the a an de do da dos das e ou no na nos nas em pra pro pras pros ai"
         ""
         " unidade unidades quantidade quantidades sobrando sobra algum alguma qualquer modelo modelos"
