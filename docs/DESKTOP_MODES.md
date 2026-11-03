@@ -23,6 +23,24 @@ dashboard, upload UI, database or cloud integration was added.
 | EMPORIO_ORDER_ID | Positive startup-selected order for Meu pedido; default 1. Ownership is still checked on every access. |
 | OLLAMA_MODEL | Existing local model setting; verification uses qwen3:4b-instruct. |
 
+To open the Windows desktop in LOCAL mode with the order panel enabled for a
+trusted local demonstration session, enter the customer and one of that
+customer's order IDs at startup:
+
+```powershell
+$env:EMPORIO_DATA_MODE = "local"
+$env:EMPORIO_ENABLE_DEMO_IDENTITY = "1"
+$env:EMPORIO_DEMO_CUSTOMER_ID = Read-Host "Authorized local demo customer ID"
+$env:EMPORIO_ORDER_ID = Read-Host "Order ID belonging to that customer"
+$env:OLLAMA_MODEL = "qwen3:4b-instruct"
+.\.venv-desktop\Scripts\python.exe -m app.desktop
+```
+
+Start from the repository root with the original LOCAL files installed in
+`data/`. The order service checks ownership before returning any details. This
+startup-bound identity is a local demonstration adapter, not production login;
+the chat cannot change it. The double-click LOCAL launcher remains anonymous.
+
 The [Windows launcher guide](DESKTOP.md) contains desktop setup and launch
 commands. DEMO rejects local file, identity and order overrides instead of
 accidentally loading private data. LOCAL fails on missing/malformed files without

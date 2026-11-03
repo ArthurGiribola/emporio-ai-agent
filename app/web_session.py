@@ -37,8 +37,9 @@ class ChatSession:
         if enabled not in {'0', '1'}:
             raise ValueError('Demo identity opt-in must be 0 or 1')
         self._identity_enabled = self._mode == 'demo' or enabled == '1'
-        identity = env.get('EMPORIO_DEMO_CUSTOMER_ID')
-        self._order_id = int(env.get('EMPORIO_ORDER_ID', '1'))
+        identity = env.get('EMPORIO_DEMO_CUSTOMER_ID', '').strip() or None
+        configured_order_id = env.get('EMPORIO_ORDER_ID', '').strip()
+        self._order_id = int(configured_order_id or '1')
         if not 1 <= self._order_id < 10**12:
             raise ValueError('Invalid startup order')
         if self._mode == 'demo' and any(env.get(key) for key in (
