@@ -91,8 +91,8 @@ def catalog_arguments(question: str, arguments: dict, catalog) -> dict:
     ignored = set((
         "quais qual que produto produtos instrumento instrumentos modelo modelos opcoes existem liste listar lista catalogo todos todas completo completa"
         " disponivel disponiveis tem tenho temos tao ta esta estao voces vcs vende vendem estoque barato baratinho baratinhos barata baratas caro carinhos caros mais menos ao"
-        " estao esta primeiro primeiros primeira primeiras ultimo ultimos do da de dos das um uma uns umas o a os as me mostra mostre ver"
-        " por ate no maximo reais real r com ate todos tudo incluindo pf favor please all every available product products"
+        " estao esta primeiro primeiros primeira primeiras ultimo ultimos do da de dos das um uma uns umas o a os as me mostra mostre ver apresente apresentar apresentem"
+        " por ate no maximo reais real r com ate todos tudo incluindo pf favor porfavor please all every available product products"
         " quanto custa cost costs preco precos price prices valor values quanto custa aceita aceitam aceita bem comparar compare comparison differences difference diferenca"
         " quero queria queremos gostariamos estou estamos to pensando considerando namorando escolhendo ainda levar pegar separa separar passa manda mostra mostrar pode podem posso podemos poderia poderiam confere gastar uns umao choose choosing looking help me can you please"
         " stock stocks inventory in stock do you does it"

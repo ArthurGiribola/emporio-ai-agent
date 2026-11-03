@@ -238,11 +238,16 @@ class ReliabilityTests(unittest.TestCase):
         second = self.tools.prepare_arguments('search_products', {}, 'Me passa a lista completa, do mais em conta pro mais caro.')
         third = self.tools.prepare_arguments('search_products', {}, 'Agora pode mostrar os violões de aço disponíveis?')
         polite = self.tools.prepare_arguments('search_products', {}, 'ola, gostaria de ver os produtos disponiveis')
+        complete_polite = self.tools.prepare_arguments('search_products', {}, 'catalogo completo porfavor')
+        presented = self.tools.prepare_arguments('search_products', {}, 'me apresente o catalogo completo porfavor')
         self.assertEqual(first['query'], 'sintetico')
         self.assertEqual(second['query'], '')
         self.assertEqual(third['query'], 'aco')
         self.assertEqual(polite['query'], '')
+        self.assertEqual(complete_polite['query'], '')
+        self.assertEqual(presented['query'], '')
         self.assertTrue(polite['all_results'])
+        self.assertTrue(complete_polite['all_results'])
         self.assertTrue(second['all_results'])
         self.assertEqual([p['product_id'] for p in self.tools.execute('search_products', first)['data']['products']], [1, 3])
         self.assertEqual([p['product_id'] for p in self.tools.execute('search_products', third)['data']['products']], [3])
@@ -341,9 +346,14 @@ class ReliabilityTests(unittest.TestCase):
 
     def test_purchase_interest_remains_informational_and_tool_free(self):
         agent, provider = self.agent([])
-        result = agent.run('Gostaria de comprar dois produtos.')
-        self.assertEqual(result.status, 'answered')
-        self.assertIn('Quais instrumentos', result.text)
+        for question in ('Gostaria de comprar dois produtos.',
+                         'Gostaria de fazer uma compra.',
+                         'Quero realizar uma compra.',
+                         'I would like to make a purchase.'):
+            with self.subTest(question=question):
+                result = agent.run(question)
+                self.assertEqual(result.status, 'answered')
+                self.assertTrue('Which instruments' in result.text or 'Quais instrumentos' in result.text)
         self.assertEqual(provider.complete.call_count, 0)
 
     def test_purchase_quantity_followup_uses_selected_product_and_verifies_stock(self):

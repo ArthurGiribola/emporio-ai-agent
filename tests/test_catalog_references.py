@@ -70,6 +70,26 @@ class CatalogReferenceTests(unittest.TestCase):
             agent.reset()
             self.assertEqual(agent._catalog_product_ids, ())
 
+    def test_purchase_by_list_position_uses_the_latest_verified_catalog_mapping(self):
+        mock_shop_scope(self)
+        with SyntheticTools() as tools:
+            provider = Mock(external=False)
+            provider.complete.side_effect = [
+                ProviderReply('', (ToolCall('search_products', {'all_results': True}),), {}),
+                ProviderReply('Catalog', (), {}),
+                ProviderReply('', (ToolCall('get_product', {'product_id': 1}),), {}),
+                ProviderReply('Wrong product', (), {}),
+            ]
+            events = []
+            agent = Agent(provider, tools, observer=events.append)
+            agent.run('Liste todos os produtos disponíveis.')
+
+            result = agent.run('Gostaria de comprar o produto 2.')
+
+            self.assertIn(tools._catalog.get_product(3).name, result.text)
+            lookup = [e for e in events if e.get('event') == 'tool_result' and e.get('name') == 'get_product'][-1]
+            self.assertEqual(lookup['effective_arguments']['product_id'], 3)
+
     def test_exact_original_item_63_maps_to_named_battery(self):
         from pathlib import Path
         from app.web_session import ChatSession

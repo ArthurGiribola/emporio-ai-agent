@@ -115,8 +115,10 @@ def simplify_request(question):
 def purchase_interest(question):
     t = normalize(question)
     explicit_action = re.search(r'\b(?:comprar|compro|compraria|adquirir|adquiro|separ\w*|pegar|pego|buy|purchase)\b', t)
+    general_purchase = re.search(
+        r'\b(?:fazer|realizar|efetuar)\s+(?:uma\s+)?compra\b|\bmake\s+(?:a\s+)?purchase\b', t)
     explicit_take = re.search(r'\b(?:quero|queria|gostaria|pretendo|vou|want|would like|plan to)\s+(?:levar|pegar|take)\b', t)
-    return bool(explicit_action or explicit_take or
+    return bool(explicit_action or general_purchase or explicit_take or
                 re.search(r'\b(?:pensando|considerando|looking|planning)\b.*\b(?:viol|instrument|product|guit|music)\w*', t) or
                 (re.search(r'\b(?:namorando a ideia|thinking about|considerando a ideia)\b', t)
                  and re.search(r'\b(?:viol\w*|instrument\w*|product|guit\w*|music)\b', t)) or
