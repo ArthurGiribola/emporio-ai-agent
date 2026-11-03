@@ -242,12 +242,20 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(second['query'], '')
         self.assertEqual(third['query'], 'aco')
         self.assertEqual(polite['query'], '')
+        self.assertTrue(polite['all_results'])
         self.assertTrue(second['all_results'])
         self.assertEqual([p['product_id'] for p in self.tools.execute('search_products', first)['data']['products']], [1, 3])
         self.assertEqual([p['product_id'] for p in self.tools.execute('search_products', third)['data']['products']], [3])
         polite_result = self.tools.execute('search_products', polite)
         self.assertGreater(polite_result['data']['total_matches'], 0)
         self.assertTrue(all(product['available'] for product in polite_result['data']['products']))
+
+    def test_broad_browse_requests_load_full_results_but_limited_requests_stay_partial(self):
+        from app.grounding import wants_catalog_browse
+        self.assertTrue(wants_catalog_browse('Quais produtos estão disponíveis?', self.tools._catalog))
+        self.assertTrue(wants_catalog_browse('Quero ver os violões disponíveis.', self.tools._catalog))
+        self.assertFalse(wants_catalog_browse('Mostre os primeiros 3 produtos.', self.tools._catalog))
+        self.assertFalse(wants_catalog_browse('Qual é o preço do produto 1?', self.tools._catalog))
 
     def test_conversational_rephrasings_need_no_business_tool(self):
         for question in ('Oiê!', 'E aí, tudo certo?', 'Cheguei agora. Como vocês podem me dar uma força?',

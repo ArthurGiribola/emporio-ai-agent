@@ -13,6 +13,18 @@ def wants_all(question: str) -> bool:
                 or (re.search(r"\btudo\b", text) and not re.match(r"^tudo\s+bem\b", text)))
 
 
+def wants_catalog_browse(question: str, catalog) -> bool:
+    """Load full results when the customer asks to browse a broad product set."""
+    text = normalize(question)
+    listing = re.search(r"\b(?:quais|ver|veja|mostrar|mostr\w*|listar|liste|lista|exib\w*|browse|show|list)\b", text)
+    scope = (catalog.category_ids_from_text(question) or re.search(
+        r"\b(?:produtos|instrumentos|modelos|catalogo|available|disponiveis)\b", text))
+    preview = re.search(
+        r"\b(?:alguns|algumas|poucos|poucas|few|some|a few|primeir\w*\s+\d+|first\s+\d+)\b|"
+        r"\b\d+\s+(?:produtos|instrumentos|modelos)\b", text)
+    return bool(listing and scope and not preview and requested_budget(question) is None)
+
+
 def catalog_question(question: str) -> bool:
     return bool(wants_all(question) or re.search(r"\b(?:quais|existem|modelos|opcoes|disponiveis|disponivel|liste|listar|lista|catalogo|todos|todas|all|list|available|tem|vende|estoque|baratos|barato|precos|prices|instrument\w*|viol\w*|guit\w*|ukulel\w*|baix\w*)\b", normalize(question)))
 
@@ -71,7 +83,7 @@ def catalog_arguments(question: str, arguments: dict, catalog) -> dict:
     budget = requested_budget(question)
     if budget is not None:
         result["max_price_brl"] = str(budget)
-    result["all_results"] = wants_all(question)
+    result["all_results"] = wants_all(question) or wants_catalog_browse(question, catalog)
     if result["all_results"] or re.search(r"\b(?:efetiv|final|desconto|effective|discount|promoc|pix|preco|custa|quanto|price|cost)\b", text):
         result["sort_by"] = "effective_price"
     # Build the search phrase from user-provided qualifiers only; never trust a
