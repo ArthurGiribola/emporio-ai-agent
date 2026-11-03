@@ -11,7 +11,7 @@ from app.tool_runtime import ToolRuntime
 from app.scope import assess_scope, scope_message, language_hint
 from app.catalog_references import resolve_list_reference
 from app.grounding import catalog_question, requested_product_ids, requested_order_id, order_record_followup, wants_all, english_question
-from app.return_policy import online_return_question
+from app.return_policy import online_return_question, elapsed_followup_days
 from app.catalog_view import CatalogView, build_catalog_view
 from app.conversation import (memory_exchange, assistant_text, conversation_question,
     purchase_interest, advisory_question, exploration_response, simplify_request,
@@ -278,7 +278,15 @@ class Agent:
                 r'\b\d+\s+(?:dias?|days?)\b|\b(?:cinco|sete|five|seven) dias?\b', normalize(question)))
                 and not online_return_question(question))
             if policy_time_followup:
-                question = self._last_fact_question + '\nComplemento do cliente: ' + question
+                followup = question
+                question = self._last_fact_question + '\nComplemento do cliente: ' + followup
+                prior_answer = previous_answers[-1] if previous_answers else ''
+                elapsed = elapsed_followup_days(followup)
+                if (elapsed is not None and online_return_question(self._last_fact_question)
+                        and re.search(r'quantos dias corridos se passaram desde o recebimento', normalize(prior_answer))):
+                    # The previous answer explicitly asked for days since receipt;
+                    # anchor this short reply before deterministic policy arithmetic.
+                    question += f'\nContexto da resposta anterior: recebimento há {elapsed} dias corridos.'
                 previous_questions.append(self._last_fact_question)
                 previous_answers.append('The customer is asking a follow-up about the retrieved store policy.')
             # A question about the source of the immediately preceding policy answer

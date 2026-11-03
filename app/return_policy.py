@@ -62,6 +62,18 @@ def elapsed_receipt_days(question: str) -> int | None:
     return next(iter(values)) if len(values) == 1 else None
 
 
+def elapsed_followup_days(question: str) -> int | None:
+    """Read a short elapsed-day answer; caller must anchor it to receipt context."""
+    text = normalize(question)
+    for word, number in NUMERALS.items():
+        text = re.sub(r"\b" + word + r"\b", number, text)
+    if re.search(r"\b\d{1,4}\s+(?:dias?|days?) uteis\b", text):
+        return None
+    values = {int(value) for value in re.findall(
+        r"\b(?:ja )?(?:se )?passaram (\d{1,4}) dias?(?: corridos)?\b", text)}
+    return next(iter(values)) if len(values) == 1 else None
+
+
 def assess_online_return(question: str, rule: dict) -> dict:
     text = normalize(question)
     online = bool(re.search(r"\b(?:internet|online|on-line|site)\b", text))

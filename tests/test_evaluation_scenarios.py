@@ -26,7 +26,7 @@ class EvaluationScenarioTests(unittest.TestCase):
         assertions = {'expected_status', 'expected_scope', 'must_call_tool', 'must_call_any',
                       'must_not_call_tools', 'must_include_all', 'must_include_any',
                       'must_not_include', 'must_not_claim_purchase', 'must_redact_answer',
-                      'max_answer_words'}
+                      'max_answer_words', 'expected_policy_assessment'}
         for scenario in self.dataset['scenarios']:
             for turn in scenario['turns']:
                 with self.subTest(scenario=scenario['id'], user=turn['user']):

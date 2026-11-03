@@ -88,13 +88,23 @@
           "expected_status": "answered",
           "must_call_tool": "search_policies",
           "must_include_all": [
-            "confirmar",
-            "esclarecer"
+            "5 dias",
+            "dentro dos 11 dias",
+            "não significa que ela já foi aprovada"
           ],
           "must_not_include": [
             "sete dias",
-            "7 dias"
+            "7 dias",
+            "fora do prazo",
+            "preciso confirmar quantos dias corridos se passaram"
           ],
+          "expected_policy_assessment": {
+            "channel": "online",
+            "elapsed_days": 5,
+            "window_days": 11,
+            "within_window": true,
+            "eligibility_determined": false
+          },
           "must_redact_answer": true
         }
       ]

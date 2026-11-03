@@ -133,6 +133,36 @@ class ReturnRegressionTests(unittest.TestCase):
         separate_clocks, _, _ = self.run_question(QUESTION + " O reembolso leva 3 dias úteis?")
         self.assertTrue(separate_clocks.text.startswith("Sim"))
 
+    def test_short_five_day_followup_uses_the_receipt_anchor_the_agent_just_requested(self):
+        provider = Mock(external=False)
+        provider.complete.side_effect = [
+            ProviderReply("", (ToolCall("search_policies", {"query": "devolução online"}),), {}),
+            ProviderReply("untrusted draft", (), {}),
+            ProviderReply("", (ToolCall("search_policies", {"query": "devolução online"}),), {}),
+            ProviderReply("untrusted draft", (), {}),
+        ]
+        events = []
+        agent = Agent(provider, self.runtime(), observer=events.append)
+        agent.run("Comprei pela internet e me arrependi. Qual é o prazo para pedir devolução?")
+        result = agent.run("E se já passaram cinco dias?")
+
+        timing_event = [e for e in events if e.get("event") == "tool_result" and e.get("name") == "search_policies"][-1]
+        timing = timing_event["result"]["data"]["online_return_assessment"]
+        self.assertEqual(timing["elapsed_days"], 5)
+        self.assertEqual(timing["window_days"], 7)
+        self.assertTrue(timing["within_window"])
+        self.assertFalse(timing["eligibility_determined"])
+        self.assertIn("recebimento há 5 dias", timing_event["effective_arguments"]["query"])
+        self.assertTrue(result.text.startswith("Sim"))
+        self.assertIn("5 dias", result.text)
+        self.assertIn("7 dias", result.text)
+        self.assertNotIn("quantos dias corridos se passaram", result.text)
+
+    def test_short_elapsed_day_parser_rejects_business_days(self):
+        from app.return_policy import elapsed_followup_days
+        self.assertEqual(elapsed_followup_days("E se já passaram cinco dias?"), 5)
+        self.assertIsNone(elapsed_followup_days("E se já passaram cinco dias úteis?"))
+
 
 @unittest.skipUnless((DATA / "políticas_da_loja.pdf").is_file(), "Authorized original PDF absent")
 class OriginalReturnRegressionTests(unittest.TestCase):

@@ -44,6 +44,11 @@ def evaluation_tool_event(event):
             'discount_percent', 'discount_kind', 'warnings') if key in data}
     elif name == 'search_policies':
         safe['result'] = {'status': data.get('status'), 'references': data.get('references', [])}
+        assessment = data.get('online_return_assessment')
+        if isinstance(assessment, dict):
+            safe['result']['online_return_assessment'] = {
+                key: assessment.get(key) for key in
+                ('channel', 'elapsed_days', 'window_days', 'within_window', 'eligibility_determined')}
     elif name == 'lookup_order':
         order = data.get('order') or {}
         safe['result'] = {'status': data.get('status'), 'order_status': order.get('status'),
@@ -161,6 +166,14 @@ def main():
                         r'\b(?:snapshot|list_price_brl|tool_call|tool call|data retrieval|database field|'
                         r'retrieval system|function calling)\b', visible_text, re.IGNORECASE),
                 }
+                expected_policy_assessment = case.get('expected_policy_assessment')
+                if expected_policy_assessment:
+                    evidence = next((event.get('result', {}).get('data', {}).get('online_return_assessment')
+                                     for event in reversed(events)
+                                     if event.get('event') == 'tool_result' and event.get('name') == 'search_policies'
+                                     and event.get('result', {}).get('status') == 'ok'), None)
+                    checks['policy_assessment'] = bool(evidence) and all(
+                        evidence.get(key) == value for key, value in expected_policy_assessment.items())
                 if case.get('max_answer_words') is not None:
                     checks['concise'] = len(re.findall(r'\b[\w-]+\b', answer.text)) <= case['max_answer_words']
                 expected_safe_tool_error = expected_status == 'tool_error' and status == 'tool_error'
