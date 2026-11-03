@@ -292,7 +292,8 @@ class ReliabilityTests(unittest.TestCase):
 
     def test_store_address_and_location_variants_require_policy_evidence(self):
         for question in ('Qual é o endereço físico da loja?', 'Onde fica a loja?',
-                         'Em qual localização vocês atendem?', 'Como chegar à loja?'):
+                         'Em qual localização vocês atendem?', 'Como chegar à loja?',
+                         'Where is the store?', 'How can I get to the shop?'):
             with self.subTest(question=question):
                 self.assertEqual(self.tools.required_evidence(question), 'search_policies')
                 evidence = self.tools.execute('search_policies', {'query': question})

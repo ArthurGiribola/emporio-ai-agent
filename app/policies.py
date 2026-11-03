@@ -41,8 +41,10 @@ HEADINGS = {
 }
 
 # Whole-word stems are deliberate; unrelated words must not match short substrings.
-ADDRESS_QUERY_PATTERN = (r"\b(?:enderec\w*|localiz\w*)\b|\bonde (?:fica|esta|e) (?:a )?loja\b|"
-                         r"\bcomo chegar(?: a)? (?:a )?loja\b")
+ADDRESS_QUERY_PATTERN = (r"\b(?:enderec\w*|localiz\w*|address|location)\b|"
+                         r"\bonde (?:fica|esta|e) (?:a )?loja\b|\bcomo chegar(?: a)? (?:a )?loja\b|"
+                         r"\bwhere is (?:the )?(?:store|shop)\b|\bwhere can i find (?:the )?(?:store|shop)\b|"
+                         r"\bhow (?:do i|can i) get to (?:the )?(?:store|shop)\b")
 TOPICS = {
     "returns": (r"\b(?:devol\w*|troc\w*|arrepend\w*|reembols\w*|ressarc\w*|estorn\w*|desist\w*)\b", ("4.1", "4.2", "4.3", "4.4")),
     "warranty": (r"\b(?:garanti\w*|defeit\w*|avari\w*|quebrad\w*|consert\w*)\b|assistencia tecnica", ("4.2", "8.1", "8.2", "8.3")),
