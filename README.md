@@ -94,6 +94,9 @@ Git. To use the CLI:
 Order access is denied by default. A local demonstration identity can only be
 configured at startup and is not production authentication. See
 [LOCAL/DEMO mode details](docs/DESKTOP_MODES.md) before enabling order access.
+The DEMO desktop launcher uses synthetic order 1 by default; the LOCAL
+double-click launcher intentionally leaves “Meu pedido” unavailable. The mode
+guide explains how to enable a trusted startup-bound demo identity in LOCAL.
 
 ## Interfaces and setup guides
 
