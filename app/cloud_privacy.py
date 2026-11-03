@@ -21,7 +21,7 @@ politica politicas devolucao devolver reembolso estorno troca trocar garantia de
 horario funcionamento abre fecha sabado domingo reclamacao queixa frete envio
 sintetico sintetica sinteticos sinteticas demonstracao exemplo reais ate abaixo acima
 com sem de do da dos das em no na por para e ou o a os as um uma meu minha esse essa
-este esta primeiro primeira segundo segunda anterior anteriores mais menos mesmo mesma
+este esta desses dessas deles delas primeiro primeira segundo segunda anterior anteriores mais menos mesmo mesma
 agora ainda tambem somente detalhes comparar compare liste mostrar mostre""".split())
 NUMBERS = frozenset({"1", "2", "3", "50", "100", "150", "200", "250", "500", "1000"})
 DOMAIN = WORDS - frozenset("""de do da dos das em no na por para e ou o a os as um uma

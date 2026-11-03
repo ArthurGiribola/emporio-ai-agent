@@ -8,25 +8,47 @@ from app.services import _normalize
 
 
 def wants_all(question: str) -> bool:
-    return bool(re.search(r"\b(?:todos|todas|completa|completo|all|every)\b", normalize(question)))
+    text = normalize(question)
+    return bool(re.search(r"\b(?:todos|todas|completa|completo|all|every|everything)\b", text)
+                or (re.search(r"\btudo\b", text) and not re.match(r"^tudo\s+bem\b", text)))
 
 
 def catalog_question(question: str) -> bool:
-    return bool(re.search(r"\b(?:quais|existem|modelos|opcoes|disponiveis|liste|listar|catalogo|todos|todas|all|list|available)\b", normalize(question)))
+    return bool(re.search(r"\b(?:quais|existem|modelos|opcoes|disponiveis|disponivel|liste|listar|catalogo|todos|todas|all|list|available|tem|vende|estoque|baratos|barato|precos|prices|instrument\w*|viol\w*|guit\w*|ukulel\w*|baix\w*)\b", normalize(question)))
 
 
 def requested_budget(question: str) -> Decimal | None:
     match = re.search(r"(?:ate|no maximo|up to|under)\s*(?:r\$\s*)?(\d[\d.,]*)", normalize(question))
-    if not match:
+    if match:
+        number = match.group(1).rstrip(".,")
+        if "," in number:
+            number = number.replace(".", "").replace(",", ".")
+        elif re.fullmatch(r"\d{1,3}(?:\.\d{3})+", number):
+            number = number.replace(".", "")
+        if re.fullmatch(r"\d{1,12}(?:\.\d{1,2})?", number):
+            return Decimal(number)
         return None
-    number = match.group(1).rstrip(".,")
-    if "," in number:
-        number = number.replace(".", "").replace(",", ".")
-    elif re.fullmatch(r"\d{1,3}(?:\.\d{3})+", number):
-        number = number.replace(".", "")
-    if not re.fullmatch(r"\d{1,12}(?:\.\d{1,2})?", number):
+    text = normalize(question)
+    words = re.search(r"(?:ate|no maximo|up to|under)\s+((?:zero|um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|onze|doze|treze|quatorze|catorze|quinze|dezesseis|dezessete|dezoito|dezenove|vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa|cem|cento|duzentos|duzentas|trezentos|trezentas|quatrocentos|quatrocentas|quinhentos|quinhentas|seiscentos|seiscentas|setecentos|setecentas|oitocentos|oitocentas|novecentos|novecentas|mil)(?:\s+e\s+(?:zero|um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|onze|doze|treze|quatorze|catorze|quinze|dezesseis|dezessete|dezoito|dezenove|vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa|cento|duzentos|duzentas|trezentos|trezentas|quatrocentos|quatrocentas|quinhentos|quinhentas|seiscentos|seiscentas|setecentos|setecentas|oitocentos|oitocentas|novecentos|novecentas))*)(?:\s+reais?)?\b", text)
+    if not words:
         return None
-    return Decimal(number)
+    values = {'zero':0,'um':1,'uma':1,'dois':2,'duas':2,'tres':3,'quatro':4,'cinco':5,'seis':6,'sete':7,'oito':8,'nove':9,
+              'dez':10,'onze':11,'doze':12,'treze':13,'quatorze':14,'catorze':14,'quinze':15,'dezesseis':16,'dezessete':17,'dezoito':18,'dezenove':19,
+              'vinte':20,'trinta':30,'quarenta':40,'cinquenta':50,'sessenta':60,'setenta':70,'oitenta':80,'noventa':90,
+              'cem':100,'cento':100,'duzentos':200,'duzentas':200,'trezentos':300,'trezentas':300,'quatrocentos':400,'quatrocentas':400,
+              'quinhentos':500,'quinhentas':500,'seiscentos':600,'seiscentas':600,'setecentos':700,'setecentas':700,
+              'oitocentos':800,'oitocentas':800,'novecentos':900,'novecentas':900}
+    total = current = 0
+    for word in words.group(1).split():
+        if word == 'e':
+            continue
+        if word == 'mil':
+            total += max(current, 1) * 1000
+            current = 0
+        else:
+            current += values[word]
+    amount = total + current
+    return Decimal(amount) if 0 < amount < 10**12 else None
 
 
 def catalog_arguments(question: str, arguments: dict, catalog) -> dict:
@@ -35,33 +57,49 @@ def catalog_arguments(question: str, arguments: dict, catalog) -> dict:
     For exhaustive lists, discard invented query qualifiers while retaining
     qualifiers literally present in the request. This is not a general NL parser.
     """
-    result = dict(arguments)
+    # Never let model-inferred values silently add or retain filters. The customer
+    # question is the only source of query, category, budget, and availability scope.
+    result = {}
     text = normalize(question)
     include_unavailable = bool(re.search(r'\b(?:indisponiveis|inativos|unavailable|inactive)\b|sem estoque|out of stock', text))
-    # Availability scope, like budget/category, belongs to the current request.
     result['available_only'] = not include_unavailable
     categories = catalog.category_ids_from_text(question)
     if len(categories) == 1:
         result["category_id"] = next(iter(categories))
-    if catalog_question(question):
-        budget = requested_budget(question)
-        if budget is not None:
-            result["max_price_brl"] = str(budget)
-        if wants_all(question):
-            result["all_results"] = True
-            broad_scope = True  # Each explicit exhaustive request establishes its own scope.
-            if broad_scope and budget is None:
-                result.pop("max_price_brl", None)
-            if broad_scope and not categories:
-                result.pop("category_id", None)
-            if not categories or re.search(r"efetiv|final|desconto|effective|discount", normalize(question)):
-                result["sort_by"] = "effective_price"
-            words = set(re.findall(r"\w+", _normalize(question)))
-            query = result.get("query", "")
-            if isinstance(query, str):
-                result["query"] = " ".join(term for term in _normalize(query).split() if term in words and term not in {
-                    "all", "every", "available", "products", "instruments", "models", "todos", "todas", "disponiveis", "produtos", "instrumentos", "modelos", "sintetico", "sinteticos", "synthetic", "lista", "liste", "listar", "de", "do", "da", "os", "as", "uma", "um", "pf", "por", "favor", "mais", "barato", "baratos", "caro", "caros", "menor", "maior", "preco", "price", "cheapest", "sorted", "first", "lowest", "highest", "to", "the", "from",
-                    "catalogo", "completo", "completa", "incluindo", "indisponiveis", "inativos", "unavailable", "inactive", "including", "full", "catalog", "sem", "estoque", "out", "of", "stock", "e", "and"})
+    budget = requested_budget(question)
+    if budget is not None:
+        result["max_price_brl"] = str(budget)
+    result["all_results"] = wants_all(question)
+    if result["all_results"] or re.search(r"\b(?:efetiv|final|desconto|effective|discount|promoc|pix|preco|custa|quanto|price|cost)\b", text):
+        result["sort_by"] = "effective_price"
+    # Build the search phrase from user-provided qualifiers only; never trust a
+    # model's guessed category, currency, pagination, or stale search query.
+    ignored = set((
+        "quais qual que produto produtos instrumento instrumentos modelo modelos opcoes existem liste listar lista catalogo todos todas completo completa"
+        " disponivel disponiveis disponivel tem temos vende vendem estoque barato baratos barata baratas caro caros mais menos ao"
+        " estao esta primeiro primeiros primeira primeiras ultimo ultimos do da de dos das um uma uns umas o a os as me mostra mostre ver"
+        " por ate no maximo reais real r com ate todos tudo incluindo pf favor please all every available product products"
+        " quanto custa cost costs preco precos price prices valor values quanto custa aceita aceitam aceita bem comparar compare comparison differences difference diferenca"
+        " quero queria queremos gostariamos estou estamos pensando considerando escolhendo ainda levar separar choose choosing looking help me can you please"
+        " stock stocks inventory in stock do you does it"
+        " demonstration synthetic only filtered intent tokens original text withheld"
+        " instrument instruments models options list show catalog full complete cheapest cheapest first lowest highest price sorted price prices preco precos valor final"
+        " tiver tenham tenha haja"
+        " in stock out of stock unavailable inactive indisponiveis indisponivel inativos inativo sem estoque and or to from the a an de do da dos das e ou no na nos nas"
+        ""
+        " zero dez vinte trinta quarenta cinquenta sessenta setenta oitenta noventa cem cento duzentos duzentas"
+        " trezentos trezentas quatrocentos quatrocentas quinhentos quinhentas seiscentos seiscentas setecentos"
+        " setecentas oitocentos oitocentas novecentos novecentas mil"
+    ).split())
+    category_words = set()
+    for category_id in categories:
+        category_words.update(re.findall(r"\w+", _normalize(catalog.repository.categories[category_id].name)))
+    terms = [term for term in re.findall(r"\w+", _normalize(question))
+             if term not in ignored and term not in category_words
+             and not re.fullmatch(r"\d+(?:[.,]\d+)?", term)]
+    # Common English material terms map to the Portuguese catalog labels.
+    terms = ['aco' if term in {'steel', 'steelstring'} else term for term in terms]
+    result["query"] = " ".join(terms)
     return result
 
 

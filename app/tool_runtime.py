@@ -65,8 +65,13 @@ class ToolRuntime:
         return copy.deepcopy(TOOLS)
 
     def prepare_arguments(self, name: str, arguments: dict, question: str) -> dict:
-        if isinstance(arguments, dict) and name == 'get_product' and requested_product_id(question) is not None:
-            return {**arguments, 'product_id': requested_product_id(question)}
+        named_product = self._named_product_id(question)
+        if isinstance(arguments, dict) and name in {'get_product', 'get_price_quote'}:
+            explicit = requested_product_id(question)
+            if explicit is not None:
+                arguments = {**arguments, 'product_id': explicit}
+            elif named_product is not None:
+                arguments = {**arguments, 'product_id': named_product}
         if isinstance(arguments, dict) and name == "get_price_quote":
             result = dict(arguments)
             # Payment selection belongs to this question, not an old model call.
@@ -83,20 +88,60 @@ class ToolRuntime:
             return {**arguments, "query": question}
         return arguments
 
+    def _named_product_id(self, question: str) -> int | None:
+        """Resolve a sufficiently specific product name; return None on ambiguity."""
+        words = set(re.findall(r"\w+", normalize(question)))
+        ignored = {"de", "do", "da", "dos", "das", "the", "a", "an", "and", "with",
+                   "instrument", "instruments", "instrumento", "instrumentos", "guitar", "guitarra", "violao", "violaoes"}
+        matches = []
+        for product in self._catalog.repository.products.values():
+            name_words = set(re.findall(r"\w+", normalize(product.name))) - ignored
+            overlap = name_words & words
+            # Exact/full names win, while a unique distinctive feature such as
+            # “nylon” may identify a product in a small demo catalog.
+            if overlap:
+                matches.append((len(overlap), product.product_id))
+        if not matches:
+            return None
+        best = max(score for score, _ in matches)
+        winners = {product_id for score, product_id in matches if score == best}
+        return next(iter(winners)) if len(winners) == 1 else None
+
     def required_evidence(self, question: str) -> str | None:
+        text = normalize(question)
         if requested_order_id(question) is not None:
             return "lookup_order"
-        if online_return_question(question):
+        if online_return_question(question) or re.search(
+                r'\b(?:forma(?:s)? de pagamento|meios de pagamento|payment methods|pix acumula|'
+                r'promocao.*pix|pix.*promocao|pagamento.*aceit|payment.*accepted)\b', text):
             return "search_policies"
-        if requested_product_ids(question) and re.search(r"price|cost|quote|preco|valor|pix|desconto|discount|promocao", normalize(question)):
+        if requested_product_ids(question) and re.search(r"price|cost|quote|preco|valor|pix|desconto|discount|promocao", text):
             return "get_price_quote"
-        if requested_product_ids(question) and not re.search(r'\b(?:garantia|warranty|policy|politica|devolucao)\b', normalize(question)):
+        if requested_product_ids(question) and not re.search(r'\b(?:garantia|warranty|policy|politica|devolucao)\b', text):
             return 'get_product'
+        if (re.search(r'\b(?:compar\w*|compare|difference|differences|diferenc\w*)\b', text)
+                and not re.search(r'\b(?:preco|valor|custa|quanto|price|cost|pix)\b', text)
+                and re.search(r'\b(?:nylon|aco|steel|string|cordas?|instrument\w*|viol\w*|guit\w*|ukulel\w*)\b', text)):
+            return 'get_product'
+        named = self._named_product_id(question)
+        if named is not None:
+            if re.search(r'\b(?:preco|valor|custa|quanto|price|cost|pix|desconto)\b', text):
+                return 'get_price_quote'
+            if re.search(r'\b(?:estoque|disponivel|tem|stock|available)\b', text):
+                return 'get_product'
+            return 'get_product'
+        if self._catalog.category_ids_from_text(question):
+            return 'search_products'
+        if re.search(r'\b(?:promoc\w*|discounts?|descont\w*)\b', text):
+            return 'list_promotions'
         # An earlier catalog/price result is not evidence for a new policy topic.
         if re.search(r"\b(?:polic(?:y|ies)|politic\w*|warrant(?:y|ies)|garanti\w*|returns?|refunds?|"
                      r"devol\w*|reembols\w*|shipping|frete\w*|opening hours|horario\w*|complaints?|reclam\w*)\b", normalize(question)):
             return "search_policies"
-        if catalog_question(question) and not requested_product_ids(question) and not re.search(r'promoc|promotion', normalize(question)):
+        if (requested_budget(question) is not None or re.search(r'\b(?:mais baratos?|menor preco|lowest price|cheapest|'
+                    r'tem .*viol|vende .*viol|algum .*disponivel|available now)\b', text)):
+            return 'search_products'
+        if catalog_question(question) and not requested_product_ids(question) and not re.search(r'promoc|promotion', text):
             return "search_products"
         return None
 
@@ -115,6 +160,20 @@ class ToolRuntime:
             for name, result in reversed(results):
                 if name == "search_policies" and result.get("status") == "ok":
                     return render_online_return(question, result["data"])
+        price_question = bool(re.search(r'\b(?:preco|prec\w*|valor|quanto custa|custa|price|cost|how much)\b', normalize(question)))
+        if price_question:
+            for name, result in reversed(results):
+                rows = result.get('data', {}).get('products', []) if name == 'search_products' and result.get('status') == 'ok' else []
+                if len(rows) == 1 and not result['data'].get('truncated'):
+                    product = self._catalog.get_product(rows[0]['product_id'])
+                    payment = 'pix' if re.search(r'\bpix\b', normalize(question)) else 'list'
+                    quote = self._catalog.get_price_quote(product.product_id, payment_method=payment)
+                    return render_quote({'product_id': quote.product_id, 'base_price_brl': quote.base_price_brl,
+                        'payment_method': quote.payment_method, 'final_price_brl': quote.final_price_brl,
+                        'discount_percent': quote.discount_percent, 'discount_kind': quote.discount_kind,
+                        'available': quote.available, 'warnings': [w.code for w in quote.warnings]}, product.name,
+                        english=english_question(question), synthetic=self.is_synthetic,
+                        issues=product_issues(product, english=english_question(question)))
         for name, result in reversed(results):
             if name == "search_policies" and result.get("status") == "ok":
                 data = result["data"]

@@ -42,23 +42,51 @@ def conversation_question(question):
 def conversational_intent(question):
     """Recognize ordinary rapport and exploratory help that need no tool facts."""
     t = normalize(question)
-    if re.fullmatch(r'(?:oi|ola|hello|hi|hey|bom dia|boa tarde|boa noite)[.! ]*', t):
+    if re.fullmatch(r'(?:oi|ola|hello|hi|hey|bom dia|boa tarde|boa noite)(?:[,!? ]+(?:tudo bem|tudo certo|como vai))?[.!?, ]*', t):
         return 'greeting'
-    if re.search(r'\b(?:em que (?:voce|posso) (?:me )?ajudar|what can you help|how can you help|'
+    if re.search(r'\b(?:em que (?:voce|posso) (?:me )?ajudar|que tipo de ajuda|como podem me ajudar|'
+                 r'o que (?:voce|voces|a loja) (?:pode|podem|faz|fazem|atende|atendem)|'
+                 r'what can you help|how can you help|what help can i get|'
                  r'como funciona (?:esse|o) atendimento|how does (?:this|your) service work|'
-                 r'sou novo|sou nova|new here|first time here)\b', t):
+                 r'sou novo|sou nova|acabei de chegar|new here|first time here)\b', t):
         return 'capabilities'
     if re.search(r'\b(?:nunca toquei|nunca toque|never played|beginner|iniciante|'
-                 r'por onde comec|where should i start|getting started)\b', t):
+                 r'nao entendo nada de musica|nao entendo de instrumentos|aprender.*do zero|'
+                 r'por onde comec|where should i start|getting started|need help choosing)\b', t):
         return 'exploration'
+    if re.search(r'\b(?:nao (?:encontrei|achei|localizei)|cant find|could not find)\b.*\b(?:produto|instrumento|product|instrument|item)\b', t):
+        return 'product_search_help'
+    if (re.search(r'\b(?:nao foi isso|nao era isso|nao entendeu|nao respondeu|'
+                 r'nao resolveu|pode explicar melhor|that is not what|you misunderstood|'
+                 r'that did not answer|can you clarify|explic\w* de outro jeito)\b', t)
+            and not re.search(r'\b(?:viol\w*|instrument\w*|guit\w*|ukulel\w*|baix\w*|aco|nylon|preco|estoque|pedido|garantia|devolucao|pix|produto\s+id)\b', t)):
+        return 'repair'
+    if re.fullmatch(r'(?:valeu|obrigado|obrigada|muito obrigado|muito obrigada|thanks|thank you|cheers)'
+                    r'(?:[, ]+(?:era isso mesmo|era so|por enquanto|that is all|that was all|thats it|for now))?[.! ]*', t):
+        return 'gratitude'
     return None
 
 
 def purchase_interest(question):
     t = normalize(question)
-    return bool(re.search(r'\b(?:comprar|adquirir|buy|purchase)\b', t) or
+    return bool(re.search(r'\b(?:comprar|adquirir|levar|separar|buy|purchase|take)\b|'
+                          r'\b(?:pensando|considerando|looking|planning)\b.*\b(?:viol|instrument|product|guit|music)\w*', t) or
                 (re.search(r'\b\d+\s+(?:unidades?|units?)\b', t)
                  and re.search(r'\b(?:quero|gostaria|agora|mude|troque|desejo|want|change|make)\b', t)))
+
+
+def advisory_question(question):
+    """Allow scoped, non-transactional guidance without inventing store facts."""
+    t = normalize(question)
+    factual = r'\b(?:preco|valor|custa|quanto|stock|estoque|disponivel|available|promotion|promoc|discount|desconto|policy|politica|warranty|garantia|return|devolucao|refund|reembolso|order|pedido|tracking|rastre|opening hours|horario)\b'
+    if re.search(factual, t):
+        return False
+    return bool(re.search(r'\b(?:help me choose|help me decide|what suits me|recommend|recommendation|suggestion|'
+                          r'good fit|where should i start|beginner advice|advice for|which should i learn|'
+                          r'me ajudar a escolher|me ajudar a decidir|combina comigo|me orientar|qual instrumento devo|'
+                          r'o que voce recomenda|dica para comecar|por onde comecar)\b', t)
+                or (re.search(r'\b(?:how|como|what|o que|why|por que|explain|explique|difference|diferenca)\b', t)
+                    and re.search(r'\b(?:instrument\w*|viol\w*|guit\w*|ukulel\w*|baix\w*|keyboard|teclado|midi|strings?|cordas?|nylon|steel|aco|tocar|play|tune|afinar)\b', t)))
 
 
 def explanation_followup(question):
@@ -89,7 +117,7 @@ def failure_followup(question):
 def policy_followup(question):
     t = normalize(question)
     return (len(t.split()) <= 12 and not re.search(r'\d|garantia|devolucao|refund|return|warranty|online', t)
-            and bool(re.search(r'^(?:por\s*que|porque|why)\W*$|\b(?:fonte|sources?|secao|section|pagina|page|referencia)\b', t)))
+            and bool(re.search(r'^(?:por\s*que|porque|why)\W*$|\b(?:fonte|sources?|secao|section|pagina|page|referencia|onde encontro|where.*find)\b', t)))
 
 
 def failure_message(reason, english=False):

@@ -49,6 +49,76 @@ class ReliabilityTests(unittest.TestCase):
                 self.assertNotIn('confirmar os dados', result.text)
         self.assertEqual(provider.complete.call_count, 0)
 
+    def test_paraphrased_social_and_repair_turns_do_not_require_model_or_evidence(self):
+        agent, provider = self.agent([])
+        for question in ('Oi, tudo bem?', 'Que tipo de ajuda eu posso pedir?',
+                         'Não entendo nada de música, vocês conseguem me orientar?',
+                         'Não foi isso que eu perguntei.', 'Pode explicar de outro jeito, por favor?',
+                         'Valeu, era isso mesmo!'):
+            with self.subTest(question=question):
+                self.assertEqual(agent.run(question).status, 'answered')
+        self.assertEqual(provider.complete.call_count, 0)
+
+    def test_named_price_and_inventory_questions_require_fresh_catalog_tools(self):
+        self.assertEqual(self.tools.required_evidence('Quanto fica o Violão Sintético Nylon no PIX?'), 'get_price_quote')
+        self.assertEqual(self.tools.required_evidence('Tem violão por até duzentos e cinquenta reais?'), 'search_products')
+        self.assertEqual(self.tools.required_evidence('Qual o estoque do Violão Sintético Aço?'), 'get_product')
+
+    def test_search_filters_come_from_current_customer_question_not_model_guess(self):
+        from app.grounding import requested_budget
+        question = 'Quais produtos sintéticos estão disponíveis? Liste todos do mais barato ao mais caro.'
+        arguments = self.tools.prepare_arguments('search_products', {
+            'query': '', 'category_id': 9, 'max_price_brl': '10000.0-0', 'sort_by': 'list_price',
+            'all_results': False, 'available_only': True}, question)
+        self.assertNotIn('category_id', arguments)
+        self.assertNotIn('max_price_brl', arguments)
+        self.assertEqual(arguments['query'], 'sintetico')
+        self.assertTrue(arguments['all_results'])
+        results = self.tools.execute('search_products', arguments)['data']
+        self.assertEqual([p['product_id'] for p in results['products']], [1, 3])
+        self.assertEqual(requested_budget('Tem violão por até duzentos e cinquenta reais?'), Decimal('250'))
+
+    def test_exact_product_name_overrides_invalid_model_identifier(self):
+        question = 'Quanto fica o Violão Sintético Nylon no PIX?'
+        arguments = self.tools.prepare_arguments('get_price_quote', {'product_id': 999, 'payment_method': 'list'}, question)
+        self.assertEqual(arguments, {'product_id': 1, 'payment_method': 'pix'})
+        result = self.tools.execute('get_price_quote', arguments)
+        self.assertEqual(result['data']['final_price_brl'], '90.09')
+
+    def test_contextual_in_scope_advice_can_answer_without_mandatory_tool(self):
+        agent, provider = self.agent([text('Para começar, pense no som que você gosta e no orçamento; posso comparar opções do catálogo.')])
+        result = agent.run('Pode me ajudar a decidir o que combina comigo?')
+        self.assertEqual(result.status, 'answered')
+        self.assertIn('orçamento', result.text)
+        self.assertEqual(provider.complete.call_count, 1)
+
+    def test_price_search_with_one_verified_match_returns_service_quote(self):
+        question = 'Tudo bem. E quanto custa o violão de nylon?'
+        args = self.tools.prepare_arguments('search_products', {'query': 'violao de nylon'}, question)
+        results = self.tools.execute('search_products', args)
+        answer = self.tools.grounded_answer(question, [('search_products', results)], '')
+        self.assertIn('R$ 90,09', answer)
+        self.assertNotIn('navegar pelas páginas', answer)
+
+    def test_wellbeing_greeting_is_not_mistaken_for_an_exhaustive_catalog_request(self):
+        from app.grounding import wants_all
+        self.assertFalse(wants_all('Tudo bem. E quanto custa o violão de nylon?'))
+        self.assertTrue(wants_all('Mostra tudo que tiver no catálogo, por favor.'))
+
+    def test_ordinal_references_map_to_verified_list_positions(self):
+        from app.catalog_references import resolve_list_reference
+        question, error = resolve_list_reference('O segundo está disponível?', (1, 3))
+        self.assertIsNone(error)
+        self.assertEqual(question, 'produto ID 3 está disponível?')
+
+    def test_catalog_list_context_is_retained_for_other_product_followup(self):
+        agent, provider = self.agent([call('search_products', query='sintético'), text(),
+                                      call('get_product', product_id=1), text(),
+                                      call('get_product', product_id=1), text()])
+        agent.run('Quais produtos sintéticos estão disponíveis?')
+        agent.run('Qual é o estoque do item 1?')
+        self.assertIn(3, agent._recent_product_ids)
+
     def test_purchase_interest_remains_informational_and_tool_free(self):
         agent, provider = self.agent([])
         result = agent.run('Gostaria de comprar dois produtos.')

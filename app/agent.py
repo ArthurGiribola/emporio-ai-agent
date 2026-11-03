@@ -10,11 +10,11 @@ from app.synthetic import SyntheticTools
 from app.tool_runtime import ToolRuntime
 from app.scope import assess_scope, scope_message, language_hint
 from app.catalog_references import resolve_list_reference
-from app.grounding import catalog_question, requested_product_ids, requested_order_id, order_record_followup
+from app.grounding import catalog_question, requested_product_ids, requested_order_id, order_record_followup, wants_all
 from app.return_policy import online_return_question
 from app.catalog_view import CatalogView, build_catalog_view
 from app.conversation import (memory_exchange, assistant_text, conversation_question,
-    purchase_interest, explanation_followup, policy_followup, failure_message)
+    purchase_interest, advisory_question, explanation_followup, policy_followup, failure_message)
 from app.conversation import product_followup, failure_followup
 from app.conversation import conversational_intent
 from app.policies import normalize
@@ -116,6 +116,30 @@ class Agent:
         self._recent_product_ids = tuple(i for i in self._recent_product_ids if i != product_id) + (product_id,)
         self._recent_product_ids = self._recent_product_ids[-6:]
 
+    def _recent_named_product_id(self, question):
+        """Resolve a descriptive follow-up only among products verified this session."""
+        words = set(re.findall(r'\w+', normalize(question))) - {
+            'esse', 'essa', 'este', 'esta', 'aquele', 'aquela', 'de', 'do', 'da', 'o', 'a', 'que',
+            'e', 'no', 'na', 'com', 'por', 'quanto', 'preco', 'valor', 'custa', 'aceita', 'aceitam',
+            'pix', 'desconto', 'disponivel', 'tem', 'estoque', 'stock', 'price', 'available',
+            'this', 'that', 'it', 'the', 'of', 'with', 'for', 'does', 'is', 'cost', 'accepts'
+        }
+        if not words:
+            return None
+        candidates = []
+        generic = {'violao', 'instrumento', 'guitarra', 'baixo', 'ukulele', 'acoustic', 'guitar', 'instrument'}
+        for product_id in self._recent_product_ids:
+            product = self._tools._catalog.get_product(product_id)
+            product_words = set(re.findall(r'\w+', normalize(product.name))) - generic
+            score = len(words & product_words)
+            if score:
+                candidates.append((score, product_id))
+        if not candidates:
+            return None
+        best = max(score for score, _ in candidates)
+        matches = {product_id for score, product_id in candidates if score == best}
+        return next(iter(matches)) if len(matches) == 1 else None
+
     def _failure(self, status, language, called=(), reason=None):
         reason = reason or status
         self._last_failure = reason
@@ -138,7 +162,9 @@ class Agent:
             if name == 'search_products' and catalog_question(question) and not online_return_question(question):
                 self._catalog_product_ids = tuple(p['product_id'] for p in result['data']['products']) if result.get('status') == 'ok' else ()
                 if result.get('status') == 'ok':
-                    catalog = build_catalog_view(self._tools._catalog, result['data'], synthetic=self._tools.is_synthetic)
+                    price_question = bool(re.search(r'\b(?:preco|prec\w*|valor|quanto custa|custa|price|cost|how much)\b', normalize(question)))
+                    if not (price_question and not wants_all(question) and len(result['data']['products']) == 1 and not result['data'].get('truncated')):
+                        catalog = build_catalog_view(self._tools._catalog, result['data'], synthetic=self._tools.is_synthetic)
         history.append({'role': 'assistant', 'native': native})
         previous_count = sum(len(exchange) for exchange in self._turns)
         self._turns.append(memory_exchange(history[previous_count:]))
@@ -157,6 +183,12 @@ class Agent:
             if products:
                 self._last_product_ids = products
                 self._recent_product_ids = (tuple(i for i in self._recent_product_ids if i not in products) + products)[-6:]
+            listed = tuple(dict.fromkeys(row['product_id'] for name, result in results
+                if name == 'search_products' and result.get('status') == 'ok'
+                for row in result.get('data', {}).get('products', [])))
+            if listed:
+                self._last_product_ids = ()
+                self._recent_product_ids = (tuple(i for i in self._recent_product_ids if i not in listed) + listed)[-6:]
         self._last_failure = None
         return AgentResult('answered', answer, tuple(called), catalog)
 
@@ -168,12 +200,21 @@ class Agent:
         intent = conversational_intent(question)
         if intent:
             english = language_hint(question) == 'en' or normalize(question).split()[0] in {'hello', 'hi', 'hey'}
+            self._emit({'event': 'scope_decision', 'status': 'shop'})
             if intent == 'greeting':
                 answer = ('Hi! I can help you choose instruments, compare models, check prices and availability, explain store policies, or look up your authorized order.' if english else
                           'Oi! Posso ajudar você a conhecer instrumentos, comparar modelos, consultar preços e disponibilidade, explicar as políticas da loja ou verificar seu pedido autorizado.')
             elif intent == 'capabilities':
                 answer = ('I can help you explore instruments, compare options, check prices and availability, explain store policies, and look up an order authorized for this session.' if english else
                           'Posso ajudar você a conhecer instrumentos, comparar opções, consultar preços e disponibilidade, explicar as políticas da loja e verificar um pedido autorizado nesta sessão.')
+            elif intent == 'repair':
+                answer = ('Sorry I missed what you needed. Could you tell me which part I should clarify?' if english else
+                          'Desculpe, acho que não entendi o que você precisava. Qual parte você gostaria que eu esclarecesse?')
+            elif intent == 'product_search_help':
+                answer = ('Tell me the product name or a detail you remember, and I can look through the catalog.' if english else
+                          'Me diga o nome do produto ou algum detalhe que você lembra, que eu procuro no catálogo.')
+            elif intent == 'gratitude':
+                answer = ('You are welcome!' if english else 'Por nada!')
             else:
                 answer = ('That is a great place to start. I can help you explore beginner-friendly instruments, compare options and check what is available. Is there a sound or style you are curious about?' if english else
                           'Que legal começar! Posso ajudar você a explorar instrumentos para iniciantes, comparar opções e consultar o que está disponível. Tem algum som ou estilo que desperta sua curiosidade?')
@@ -191,10 +232,9 @@ class Agent:
         called = []
         current_results = []
         language = language_hint(question) or 'pt'
-        evidence = any(message["role"] == "tool" and message["result"].get("status") == "ok"
-                       for message in history if message["role"] == "tool")
         try:
             if self._last_failure and failure_followup(question):
+                self._emit({'event': 'scope_decision', 'status': 'shop'})
                 return self._plain(question, history, failure_message(self._last_failure, language == 'en'))
             previous_questions = [m["content"] for exchange in self._turns for m in exchange if m["role"] == "user"]
             previous_answers = [assistant_text(m) for exchange in self._turns for m in exchange if m['role'] == 'assistant']
@@ -212,8 +252,28 @@ class Agent:
                 question = self._last_fact_question + '\nComplemento do cliente: ' + question
                 previous_questions.append(self._last_fact_question)
                 previous_answers.append('The customer is asking a follow-up about the retrieved store policy.')
-            decision, language = assess_scope(self._provider, question, previous_questions, self._emit,
-                                             previous_answers=previous_answers)
+            # A question about the source of the immediately preceding policy answer
+            # is grounded by that retrieved citation; do not let a scope classifier
+            # misread it as an unrelated document request.
+            if policy_followup(question) and recent_policy:
+                references = []
+                for name, result in self._last_results:
+                    if name == 'search_policies' and result.get('status') == 'ok':
+                        for ref in result.get('data', {}).get('references', []):
+                            label = f"seção {ref['section']}, página(s) {', '.join(map(str, ref['pages']))}"
+                            if label not in references:
+                                references.append(label)
+                answer = ('That guidance appears in ' + '; '.join(references) + '.' if references else
+                          'Não tenho uma referência de seção e página confirmada para essa resposta.')
+                if language != 'en' and references:
+                    answer = 'Essa orientação aparece em ' + '; '.join(references) + '.'
+                return self._plain(question, history, answer)
+            if requested_order_id(question) is not None or purchase_interest(question):
+                decision, language = 'shop', language_hint(question) or 'pt'
+                self._emit({'event': 'scope_decision', 'status': 'shop'})
+            else:
+                decision, language = assess_scope(self._provider, question, previous_questions, self._emit,
+                                                  previous_answers=previous_answers)
             # A narrow conversation-management request is about this service,
             # even when a small classifier cannot infer its relation to a shop.
             if conversation_question(question) and decision != 'outside':
@@ -225,6 +285,15 @@ class Agent:
                 # the earlier valid conversation or change its bound identity.
                 return AgentResult("out_of_scope" if decision == "outside" else "scope_uncertain",
                                    scope_message(decision, language))
+            # A deictic availability follow-up can reuse the immediately previous
+            # complete catalog search; it must not be reconstructed from model memory.
+            if re.search(r'\b(?:desses|dessas|these|those)\b', normalize(question)) and re.search(
+                    r'\b(?:disponivel|available|estoque|stock)\b', normalize(question)):
+                prior_catalog = next((r for n, r in reversed(self._last_results)
+                                      if n == 'search_products' and r.get('status') == 'ok'), None)
+                if prior_catalog and not prior_catalog['data'].get('truncated'):
+                    return self._plain(question, history, self._tools.grounded_answer(
+                        self._last_fact_question, [('search_products', prior_catalog)], ''))
             # Preserve the topic of a policy when a short follow-up adds a
             # concrete time condition; re-retrieve instead of relying on prose memory.
             # A product-list pronoun after an order question refers to the
@@ -250,7 +319,7 @@ class Agent:
                     'Quais instrumentos você tem em mente? Posso conferir estoque, comparar modelos e explicar os preços, mas não finalizo compras nem crio pedidos.')
             if explanation_followup(question) and self._last_failure:
                 return self._plain(question, history, failure_message(self._last_failure, language == 'en'))
-            explicit_other = re.search(r'\b(?:outro|outra|other)\b.*\b(?:produto|instrumento|product|instrument)\b', normalize(question))
+            explicit_other = re.search(r'\b(?:outro|outra|other)\b.*\b(?:produto|instrumento|product|instrument|viol\w*|guit\w*|ukulel\w*|baix\w*)\b', normalize(question))
             if (self._recent_product_ids and not re.search(r'\b(?:pedido|order)\b', normalize(question))
                     and (explicit_other or (any(n in {'get_product','get_price_quote'} for n,r in self._last_results)
                          and re.search(r'\b(?:o outro|the other one)\b', normalize(question))))):
@@ -284,6 +353,10 @@ class Agent:
             if (requested_order_id(question) is None and not order_record_followup(question)
                     and re.search(r'\b(?:pedido|order|rastre\w*|tracking)\b', normalize(question))):
                 question += f'\nPedido {self._order_id}.'
+            if not requested_product_ids(question) and product_followup(question):
+                matched_recent = self._recent_named_product_id(question)
+                if matched_recent is not None:
+                    question += f'\nProduto ID {matched_recent}.'
             if (not requested_product_ids(question) and self._last_product_ids
                     and product_followup(question)
                     and re.search(r'\b(?:preco|valor|pix|estoque|disponivel|availability|available|price|cost|stock|promocao|desconto|discount)\b', normalize(question))
@@ -312,6 +385,9 @@ class Agent:
                 model_history = copy.deepcopy(history)
                 model_history[question_index]["content"] = question + f"\n\nPlease respond in {response_language}."
                 schemas = self._tools.schemas
+                required_tool = self._tools.required_evidence(question)
+                if required_tool:
+                    schemas = [schema for schema in schemas if schema['name'] == required_tool]
                 if retry_tool:
                     schemas = [schema for schema in schemas if schema['name'] == retry_tool]
                 try:
@@ -347,7 +423,11 @@ class Agent:
                         if missing:
                             history.append({'role': 'user', 'content': f'Look up all these resolved source product IDs before answering: {sorted(missing)}. Do not use list positions as IDs.'})
                             continue
-                    if not evidence:
+                    prior_authorized_order = (order_record_followup(question) and any(
+                        message.get('role') == 'tool' and message.get('name') == 'lookup_order'
+                        and message.get('result', {}).get('status') == 'ok'
+                        for exchange in self._turns for message in exchange))
+                    if not current_results and not advisory_question(question) and not prior_authorized_order:
                         return self._failure('unverified', language, called)
                     if not current_results and re.search(
                             r'nao (?:encontr|localiz|exist)|not found|couldn.t find|does not exist|not in (?:the )?catalog',
@@ -383,7 +463,6 @@ class Agent:
                     self._emit({"event": "tool_result", "name": call.name, "requested_arguments": call.arguments,
                                 "effective_arguments": effective, "result": result})
                     current_results.append((call.name, result))
-                    evidence = evidence or result.get("status") == "ok"
                     called.append(call.name)
                     history.append({"role": "tool", "name": call.name, "call_id": call.call_id, "result": result})
                 # Large lists are already formatted from verified Python results.
