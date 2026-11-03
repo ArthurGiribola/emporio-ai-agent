@@ -23,11 +23,12 @@ dashboard, upload UI, database or cloud integration was added.
 | EMPORIO_ORDER_ID | Positive startup-selected order for Meu pedido; default 1. Ownership is still checked on every access. |
 | OLLAMA_MODEL | Existing local model setting; verification uses qwen3:4b-instruct. |
 
-The README contains complete PowerShell launch commands. DEMO rejects local file,
-identity and order overrides instead of accidentally loading private data. LOCAL
-fails on missing/malformed files without falling back to synthetic data. Paths
-and IDs have no customer-facing editor. Settings are copied at session creation;
-reset and navigation preserve them. Restart to apply trusted configuration changes.
+The [Windows launcher guide](DESKTOP.md) contains desktop setup and launch
+commands. DEMO rejects local file, identity and order overrides instead of
+accidentally loading private data. LOCAL fails on missing/malformed files without
+falling back to synthetic data. Paths and IDs have no customer-facing editor.
+Settings are copied at session creation; reset and navigation preserve them.
+Restart to apply trusted configuration changes.
 
 ## Privacy and authorization
 

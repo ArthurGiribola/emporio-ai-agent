@@ -62,8 +62,8 @@ policy. Critical existing deterministic safeguards remain in place.
 
 ## Launch and focused tests
 
-See the README's optional Streamlit section for a separate Python 3.12 environment
-and local Ollama installation. From an environment with `pip install -e ".[ui]"`:
+Create a Python environment and install the optional UI dependencies. From the
+repository root:
 
 ```powershell
 $env:OLLAMA_MODEL = "qwen3:4b"

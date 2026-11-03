@@ -52,6 +52,27 @@ project eligibility remains unverified without its key/free-tier confirmation.
 Cloud checks remain synthetic-only. Authorized source-data checks run only on
 local Ollama, explicitly opt-in, with honest skips when prerequisites are absent.
 
+## Optional Gemini synthetic CLI run
+
+Use an active Gemini Free Tier project without linked billing. The command below
+prompts securely for the key; never commit it, add it to a command file, or send
+it alongside private store data.
+
+```powershell
+$demoGeminiKey = Read-Host "Free-tier Gemini API key" -AsSecureString
+$env:GEMINI_API_KEY = [System.Net.NetworkCredential]::new("", $demoGeminiKey).Password
+$env:LLM_PROVIDER = "gemini"
+$env:LLM_MODEL = "gemini-3.1-flash-lite"
+$env:GEMINI_FREE_TIER_CONFIRMED = "1"
+.\.venv\Scripts\python.exe -m app.cli --data-mode synthetic
+```
+
+The confirmation variable is an operator attestation, not a billing check. The
+CLI conversation is interactive but the Gemini path accepts only approved
+synthetic fixture data and projected shop vocabulary. A fixed smoke scenario is
+available with `python -m app.provider_demo --scenario price`; it is not the
+interactive agent interface.
+
 ## Primary sources
 
 - [Gemini model](https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite)
@@ -72,4 +93,5 @@ local Ollama, explicitly opt-in, with honest skips when prerequisites are absent
 The CLI supports multi-turn conversations. Ollama can use arbitrary questions
 and authorized local store files. Gemini only receives synthetic fixtures and
 locally projected demo vocabulary. The optional fixed-scenario runner is a smoke
-test, not the conversational agent. Setup is in the README.
+test, not the conversational agent. The local Ollama quick start is in the README;
+the Gemini-specific setup is above.

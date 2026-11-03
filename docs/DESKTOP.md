@@ -24,6 +24,35 @@ Windows .NET support needed by pythonnet must already be available; no system
 runtime installation is attempted. The optional desktop extra leaves core CLI
 installation independent. `python -m app.web` still opens the browser-based UI.
 
+## Double-click launchers
+
+Create the launchers' environment once from the repository root:
+
+```powershell
+py -3.12 -m venv .venv-desktop
+.\.venv-desktop\Scripts\python.exe -m pip install -e ".[desktop]"
+```
+
+Then double-click `Abrir Emporio - DEMO.cmd` for public synthetic fixtures or
+`Abrir Emporio - LOCAL.cmd` for authorized files in `data/`. Ollama and
+`qwen3:4b-instruct` must already be installed/running. The LOCAL launcher
+supports product and policy questions without an order identity; its fixed
+launcher configuration keeps order lookup disabled. The launchers do not install
+dependencies each time. If Python 3.12 is managed by uv rather than the Windows
+Python Launcher, use the interpreter discovery method documented in
+`DESKTOP_MODES.md`.
+
+For a trusted local startup diagnosis, run from PowerShell:
+
+```powershell
+$env:EMPORIO_DESKTOP_DEBUG = "1"
+.\.venv-desktop\Scripts\python.exe -m app.desktop
+Remove-Item Env:EMPORIO_DESKTOP_DEBUG -ErrorAction SilentlyContinue
+```
+
+This prints the original exception and owned Streamlit child output to the local
+console only. Review paths before sharing diagnostics.
+
 ## Process ownership and ports
 
 A direct multiprocessing spawn worker calls Streamlit's existing native runner,
