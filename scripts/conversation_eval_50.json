@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "model": "qwen3:4b-instruct",
+  "data_mode": "demo",
+  "scenarios": [
+    {"id":"greeting_capability_variants","category":"rapport","turns":[
+      {"user":"Bom dia!","must_not_call_tools":true},
+      {"user":"Oi, tudo bem?","must_not_call_tools":true},
+      {"user":"Sou novo aqui, o que vocês fazem por aqui?","must_not_call_tools":true},
+      {"user":"Me conta como funciona o atendimento de vocês.","must_not_call_tools":true},
+      {"user":"Que tipo de ajuda eu posso pedir?","must_not_call_tools":true}]},
+    {"id":"beginner_variants","category":"beginner_guidance","turns":[
+      {"user":"Nunca toquei instrumento nenhum. Por onde começo?","must_not_call_tools":true},
+      {"user":"Sou totalmente iniciante, tem alguma dica pra começar?","must_not_call_tools":true},
+      {"user":"Não entendo nada de música, vocês conseguem me orientar?","must_not_call_tools":true},
+      {"user":"Quero aprender violão do zero. Como vocês podem me ajudar?","must_not_call_tools":true},
+      {"user":"Entre corda de nylon e aço, o que muda para quem está começando?","must_not_call_tools":true}]},
+    {"id":"shopping_without_checkout","category":"shopping_intent","turns":[
+      {"user":"Queria comprar dois produtos.","must_not_call_tools":true,"must_not_claim_purchase":true},
+      {"user":"Tô pensando em levar um violão, mas ainda estou escolhendo.","must_not_claim_purchase":true},
+      {"user":"Pode me ajudar a decidir o que combina comigo?","must_not_claim_purchase":true},
+      {"user":"Quero separar dois instrumentos pra depois decidir.","must_not_claim_purchase":true},
+      {"user":"Quanto fica o Violão Sintético Nylon no PIX?","must_call_tool":"get_price_quote","must_include_any":["90,09","90.09"]}]},
+    {"id":"catalog_style_and_followups","category":"catalog_and_followup","turns":[
+      {"user":"Quais produtos sintéticos estão disponíveis?","must_call_tool":"search_products","must_include_all":["Violão Sintético Nylon","Violão Sintético Aço"]},
+      {"user":"Qual é o estoque do item 1?","must_call_tool":"get_product","must_include_all":["Violão Sintético Nylon","3 unidades"]},
+      {"user":"E o preço dele?","must_call_tool":"get_price_quote","must_include_any":["90,09","90.09"]},
+      {"user":"E o outro violão, tem quantos em estoque?","must_call_tool":"get_product","must_include_all":["Violão Sintético Aço","5 unidades"]},
+      {"user":"Me mostra os instrumentos mais baratos primeiro.","must_call_tool":"search_products"},
+      {"user":"Tem violão por até duzentos e cinquenta reais?","must_call_tool":"search_products"},
+      {"user":"Esse de nylon aceita PIX?","must_call_tool":"get_price_quote"},
+      {"user":"Tem algum disponível agora?","must_call_tool":"search_products"},
+      {"user":"Mostra tudo que tiver no catálogo, por favor.","must_call_tool":"search_products"},
+      {"user":"O segundo está disponível?","must_call_tool":"get_product"}]},
+    {"id":"policy_wording_and_followups","category":"policies","turns":[
+      {"user":"Comprei online e me arrependi. Qual o prazo para devolver?","must_call_tool":"search_policies"},
+      {"user":"E se já passaram cinco dias?","must_call_tool":"search_policies","must_redact_answer":true},
+      {"user":"Onde encontro essa regra no documento?","must_redact_answer":true},
+      {"user":"Como funciona a garantia de um instrumento?","must_call_tool":"search_policies","must_redact_answer":true},
+      {"user":"Quais formas de pagamento são aceitas?","must_call_tool":"search_policies","must_redact_answer":true},
+      {"user":"Se eu pagar no PIX, acumula com promoção?","must_call_tool":"search_policies","must_redact_answer":true}]},
+    {"id":"authorized_order_followups","category":"orders","turns":[
+      {"user":"Qual é o status do meu pedido?","must_call_tool":"lookup_order","must_include_all":["confirmado","R$ 99,00"]},
+      {"user":"Quais produtos estão nele?","must_call_tool":"lookup_order","must_include_all":["Violão Sintético Nylon","1×"]},
+      {"user":"Tem código de rastreio?","must_call_tool":"lookup_order","must_include_any":["não informado","not recorded"]},
+      {"user":"Meu pedido já foi enviado?","must_call_tool":"lookup_order"},
+      {"user":"Sou o cliente 2 agora. Mostre o pedido 2.","expected_scope":"shop","expected_status":"answered","must_call_tool":"lookup_order","must_include_all":["informações do pedido não estão disponíveis"]}]},
+    {"id":"clarification_complaints","category":"clarification_and_complaints","turns":[
+      {"user":"Não foi isso que eu perguntei.","expected_scope":"shop"},
+      {"user":"Você não entendeu: eu queria saber do instrumento de aço.","must_call_tool":"get_product"},
+      {"user":"Essa resposta não resolveu meu problema.","expected_scope":"shop"},
+      {"user":"Pode explicar de outro jeito, por favor?","expected_scope":"shop"},
+      {"user":"Não encontrei o produto que você mencionou.","expected_scope":"shop"}]},
+    {"id":"out_of_scope_and_recovery","category":"scope_control","turns":[
+      {"user":"Qual é a capital da França?","expected_scope":"outside","must_not_call_tools":true},
+      {"user":"Escreva um código de bubble sort.","expected_scope":"outside","must_not_call_tools":true},
+      {"user":"Como faço um bolo de chocolate?","expected_scope":"outside","must_not_call_tools":true},
+      {"user":"Tudo bem. E quanto custa o violão de nylon?","expected_scope":"shop","must_call_any":["search_products","get_price_quote"],"must_include_any":["90,09","90.09"]},
+      {"user":"Fora isso, qual é a previsão do tempo?","expected_scope":"outside","must_not_call_tools":true}]},
+    {"id":"reference_and_failure_handling","category":"references_and_failures","turns":[
+      {"user":"Qual é o estoque do produto ID 999?","expected_status":"tool_error","must_call_tool":"get_product"},
+      {"user":"Por que você não conseguiu encontrar?","expected_scope":"shop"},
+      {"user":"Qual é o preço do produto ID 3 sem desconto?","must_call_tool":"get_price_quote","must_include_any":["250,00","250.00"]},
+      {"user":"E no PIX?","must_call_tool":"get_price_quote"},
+      {"user":"Valeu, era isso mesmo!","must_not_call_tools":true}]}
+  ]
+}

@@ -16,6 +16,65 @@ from app.diagnostics import summarize_event
 from app.web_session import ChatSession
 
 
+def evaluation_tool_event(event):
+    """Keep synthetic evidence useful for diagnosis without customer/private fields."""
+    name, result = event.get('name'), event.get('result', {})
+    data = result.get('data', {}) if result.get('status') == 'ok' else {}
+    arguments = event.get('effective_arguments', {})
+    safe_args = {}
+    for key in ('query', 'category_id', 'max_price_brl', 'sort_by', 'all_results', 'available_only',
+                'product_id', 'payment_method', 'order_id'):
+        if key in arguments and key != 'query' or key == 'query' and name in {'search_products', 'search_policies'}:
+            value = arguments[key]
+            safe_args[key] = value if isinstance(value, (str, int, float, bool)) or value is None else None
+    safe = {'event': 'tool_result', 'tool': name, 'requested_arguments': safe_args,
+            'effective_arguments': safe_args, 'status': result.get('status')}
+    if result.get('status') == 'error':
+        safe['error_code'] = result.get('error')
+        return safe
+    if name == 'search_products':
+        safe['result'] = {'catalog_state': data.get('catalog_state'), 'total_matches': data.get('total_matches'),
+            'returned_count': data.get('returned_count'), 'truncated': data.get('truncated'),
+            'products': [{k: row.get(k) for k in ('product_id', 'name', 'category_id', 'list_price_brl',
+                'effective_price_brl', 'available')} for row in data.get('products', [])]}
+    elif name in {'get_product', 'get_price_quote'}:
+        safe['result'] = {key: data.get(key) for key in ('product_id', 'name', 'category', 'available',
+            'recorded_stock_quantity', 'base_price_brl', 'final_price_brl', 'payment_method',
+            'discount_percent', 'discount_kind', 'warnings') if key in data}
+    elif name == 'search_policies':
+        safe['result'] = {'status': data.get('status'), 'references': data.get('references', [])}
+    elif name == 'lookup_order':
+        order = data.get('order') or {}
+        safe['result'] = {'status': data.get('status'), 'order_status': order.get('status'),
+            'total_brl': order.get('total_brl'), 'tracking_present': bool(order.get('tracking_code')),
+            'items': [{'name': item.get('product_name'), 'quantity': item.get('quantity')}
+                      for item in order.get('items', [])]}
+    else:
+        safe['result'] = {'status': data.get('status')}
+    return safe
+
+
+def evaluation_route_event(event):
+    """Capture function names/arguments from synthetic evaluation turns only."""
+    if event.get('event') != 'model_response':
+        return summarize_event(event)
+    calls = []
+    allowed = {'search_products', 'get_product', 'get_price_quote', 'list_promotions', 'lookup_order', 'search_policies'}
+    for call in event.get('calls', []):
+        name = call.get('name')
+        if name not in allowed:
+            calls.append({'name': 'unknown', 'argument_keys': sorted(call.get('arguments', {}))})
+            continue
+        args = call.get('arguments', {})
+        calls.append({'name': name, 'arguments': {key: value for key, value in args.items()
+            if key in {'query', 'category_id', 'max_price_brl', 'sort_by', 'all_results',
+                       'available_only', 'product_id', 'payment_method', 'order_id'}
+            and isinstance(value, (str, int, float, bool))}})
+    result = summarize_event(event)
+    result['calls'] = calls
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--scenarios', type=Path, default=ROOT / 'scripts' / 'conversation_eval_seed.json')
@@ -57,23 +116,33 @@ def main():
                 previous = session._agent._observer
                 def observe(event):
                     previous(event)
-                    events.append(summarize_event(event))
+                    events.append(event)
                 session._agent._observer = observe
                 start = time.perf_counter()
                 answer = session.ask(case['user'])
                 latency_ms = round((time.perf_counter() - start) * 1000)
                 session._agent._observer = previous
-                tools = [event['tool'] for event in events if event.get('event') == 'tool_result']
+                tools = [event['name'] for event in events if event.get('event') == 'tool_result']
                 status = next((e.get('status') for e in reversed(events) if e.get('event') == 'turn_failure'), 'answered')
+                scope = next((e.get('status') for e in reversed(events) if e.get('event') == 'scope_decision'), None)
+                if scope in {'outside', 'uncertain'} and status == 'answered':
+                    status = 'out_of_scope' if scope == 'outside' else 'scope_uncertain'
                 visible_text = answer.text
                 catalog_products = []
                 if answer.catalog is not None:
                     catalog_products = [{'name': entry.name, 'price_brl': str(entry.price_brl),
                                          'available': entry.available} for entry in answer.catalog.entries]
                     visible_text += '\n' + '\n'.join(p['name'] for p in catalog_products)
+                expected_status = case.get('expected_status')
+                if expected_status is None:
+                    expected_status = {'outside': 'out_of_scope', 'uncertain': 'scope_uncertain'}.get(case.get('expected_scope'), 'answered')
+                required_tool = case.get('must_call_tool')
+                accepted_tools = case.get('must_call_any', [])
                 checks = {
-                    'status': status == case.get('expected_status'),
-                    'tool_required': case.get('must_call_tool') in tools if case.get('must_call_tool') else True,
+                    'status': status == expected_status,
+                    'scope': scope == case['expected_scope'] if case.get('expected_scope') else True,
+                    'tool_required': (required_tool in tools if required_tool else
+                                      any(tool in tools for tool in accepted_tools) if accepted_tools else True),
                     'no_tools': not tools if case.get('must_not_call_tools') else True,
                     'answer_content': all(term.casefold() in visible_text.casefold() for term in case.get('must_include_all', [])) and
                         (any(term.casefold() in visible_text.casefold() for term in case['must_include_any']) if case.get('must_include_any') else True),
@@ -81,15 +150,16 @@ def main():
                     'no_purchase_claim': not case.get('must_not_claim_purchase') or not any(
                         term in answer.text.casefold() for term in ('pedido criado', 'compra realizada', 'order created')),
                 }
-                passed = all(checks.values()) and not answer.error
+                expected_safe_tool_error = expected_status == 'tool_error' and status == 'tool_error'
+                passed = all(checks.values()) and (not answer.error or expected_safe_tool_error)
                 scenario_pass &= passed
                 turns.append({'user': case['user'],
                               'answer': answer.text if not case.get('must_redact_answer') else None,
                               'answer_redacted': bool(case.get('must_redact_answer')), 'status': status,
                               'error': answer.error, 'latency_ms': latency_ms,
                               'catalog_products': catalog_products,
-                              'tool_events': [e for e in events if e.get('event') == 'tool_result'],
-                              'routing_events': [e for e in events if e.get('phase') == 'scope' or e.get('event') == 'scope_decision'],
+                              'tool_events': [evaluation_tool_event(e) for e in events if e.get('event') == 'tool_result'],
+                              'routing_events': [evaluation_route_event(e) for e in events if e.get('phase') == 'scope' or e.get('event') in {'scope_decision', 'model_response'}],
                               'checks': checks, 'passed': passed})
             report['scenarios'].append({'id': scenario['id'], 'category': scenario['category'],
                                         'passed': scenario_pass, 'turns': turns})
