@@ -337,9 +337,39 @@ def summarize(results):
     }
 
 
-def load(selection="all"):
+def load(selection="all", only=()):
     data = json.loads(SCENARIOS.read_text(encoding="utf-8"))
-    return [s for s in data["scenarios"] if selection == "all" or s["set"] == selection]
+    scenarios = [s for s in data["scenarios"] if selection == "all" or s["set"] == selection]
+    if only:
+        unknown = set(only) - {s["id"] for s in scenarios}
+        if unknown:
+            raise SystemExit(f"Unknown scenario id(s): {', '.join(sorted(unknown))}")
+        scenarios = [s for s in scenarios if s["id"] in set(only)]
+    return scenarios
+
+
+def repetition_summary(runs):
+    """Per-turn outcome frequencies across repeated runs of the same scenarios."""
+    turns = {}
+    for results in runs:
+        for scenario in results:
+            for index, turn in enumerate(scenario["turns"]):
+                entry = turns.setdefault(f"{scenario['id']}#{index}", {
+                    "user": turn["user"], "runs": 0, "passed": 0, "tools": {}, "answers": {}, "seconds": []})
+                entry["runs"] += 1
+                entry["passed"] += turn["passed"]
+                key = ",".join(turn["tools"]) or "(no tool)"
+                entry["tools"][key] = entry["tools"].get(key, 0) + 1
+                answer = turn["answer"][:120]
+                entry["answers"][answer] = entry["answers"].get(answer, 0) + 1
+                entry["seconds"].append(turn["seconds"])
+    for entry in turns.values():
+        seconds = entry.pop("seconds")
+        entry["latency_seconds"] = {"p50": round(statistics.median(seconds), 3), "min": round(min(seconds), 3),
+                                    "max": round(max(seconds), 3)}
+    return {"repetitions": len(runs),
+            "scenario_pass_counts": {s["id"]: sum(r[i]["passed"] for r in runs) for i, s in enumerate(runs[0])},
+            "turns": turns}
 
 
 def main():
@@ -348,8 +378,32 @@ def main():
     parser.add_argument("--model", default="qwen3:4b-instruct")
     parser.add_argument("--stub", choices=("oracle", "text"))
     parser.add_argument("--output", type=Path, default=ROOT / "reports" / "task-eval-latest.json")
+    parser.add_argument("--only", nargs="+", default=(), metavar="SCENARIO_ID",
+                        help="Run only these scenario ids (expectations unchanged).")
+    parser.add_argument("--repeat", type=int, default=1,
+                        help="Run the selection N times in fresh sessions to measure model variability.")
     args = parser.parse_args()
-    results = run_scenarios(load(args.set), model=args.model, stub=args.stub)
+    if args.repeat < 1:
+        parser.error("--repeat must be at least 1")
+    scenarios = load(args.set, args.only)
+    if args.repeat > 1:
+        runs = []
+        for index in range(args.repeat):
+            runs.append(run_scenarios(scenarios, model=args.model, stub=args.stub))
+            print(f"repetition {index + 1}/{args.repeat}: "
+                  f"{sum(s['passed'] for s in runs[-1])}/{len(runs[-1])} scenarios passed", flush=True)
+        report = {"model": None if args.stub else args.model, "stub": args.stub, "set": args.set,
+                  "only": list(args.only), "data": "fictional 65-product catalog (tests/task_fixtures.py)",
+                  "repetition_summary": repetition_summary(runs),
+                  "runs": [{"summary": summarize(r), "scenarios": r} for r in runs]}
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
+        for key, entry in report["repetition_summary"]["turns"].items():
+            print(f"  {key}: passed {entry['passed']}/{entry['runs']} tools={entry['tools']} "
+                  f"latency p50={entry['latency_seconds']['p50']}s")
+        print(f"Report: {args.output}")
+        return
+    results = run_scenarios(scenarios, model=args.model, stub=args.stub)
     report = {"model": None if args.stub else args.model, "stub": args.stub, "set": args.set,
               "data": "fictional 65-product catalog (tests/task_fixtures.py)",
               "summary": summarize(results), "scenarios": results}
