@@ -62,6 +62,31 @@ def catalog_vocabulary(catalog) -> frozenset:
     return frozenset(words)
 
 
+def requested_category_ids(question: str, catalog) -> set[int]:
+    """Categories the customer named, derived from the catalog's own labels.
+
+    A full category label wins. Otherwise a word that belongs to exactly one
+    category label (singular or plural) identifies it, so "bateria" matches
+    "Baterias e Percussão" while words shared by several labels
+    ("instrumentos", "sopro", "e") identify none.
+    """
+    exact = catalog.category_ids_from_text(question)
+    if exact:
+        return exact
+    owners = {}
+    for category in catalog.repository.categories.values():
+        for word in set(re.findall(r"\w+", _normalize(category.name))):
+            if len(word) >= 3:
+                owners.setdefault(word, set()).add(category.category_id)
+    unique = {word: next(iter(ids)) for word, ids in owners.items() if len(ids) == 1}
+    found = set()
+    for word in re.findall(r"\w+", _normalize(question)):
+        for candidate in (word, word + "s"):
+            if candidate in unique:
+                found.add(unique[candidate])
+    return found
+
+
 def catalog_arguments(question: str, arguments: dict, catalog) -> dict:
     """Build validated, structured search filters for one customer turn.
 
@@ -89,7 +114,7 @@ def catalog_arguments(question: str, arguments: dict, catalog) -> dict:
         r'\b(?:indisponiveis|indisponivel|inativos|inativas|unavailable|inactive)\b|sem estoque|out of stock', text))
     # Availability scope is the customer's explicit choice, never the model's guess.
     result['available_only'] = not explicit_unavailable
-    categories = catalog.category_ids_from_text(question)
+    categories = requested_category_ids(question, catalog)
     if len(categories) == 1:
         result["category_id"] = next(iter(categories))
     budget = requested_budget(question)
@@ -104,7 +129,7 @@ def catalog_arguments(question: str, arguments: dict, catalog) -> dict:
     model_query = model.get("query") if isinstance(model.get("query"), str) and scope != "browse" else ""
     vocabulary = catalog_vocabulary(catalog) if scope is None else None
     category_words = set()
-    for category_id in catalog.category_ids_from_text(model_query) | categories:
+    for category_id in requested_category_ids(model_query, catalog) | categories:
         category_words.update(re.findall(r"\w+", _normalize(catalog.repository.categories[category_id].name)))
     terms = []
     # Out-of-contract call (no declared scope): the model's words are not trusted;
