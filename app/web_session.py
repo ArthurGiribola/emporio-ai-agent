@@ -109,11 +109,15 @@ class ChatSession:
                 found = (f'I found {total} products in our {source}' if shown == total else
                          f'I found {total} products in our {source}; showing {shown} of {total}')
                 text = found + '. Browse the pages or select an item for details.'
+                if result.catalog_prompt:
+                    text = found + '. ' + result.catalog_prompt
             else:
                 source = 'catálogo de demonstração' if result.catalog.synthetic else 'catálogo'
                 found = (f'Encontrei {total} produtos no {source}' if shown == total else
                          f'Encontrei {total} produtos no {source}; mostrando {shown} de {total}')
                 text = found + '. Você pode navegar pelas páginas ou selecionar um item para ver os detalhes.'
+                if result.catalog_prompt:
+                    text = found + '. ' + result.catalog_prompt
             return ChatAnswer(text, tuple(self._references), catalog=result.catalog)
         return ChatAnswer(result.text, tuple(self._references))
 

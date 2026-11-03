@@ -65,7 +65,7 @@ class ToolRuntime:
     def schemas(self):
         return copy.deepcopy(TOOLS)
 
-    def prepare_arguments(self, name: str, arguments: dict, question: str) -> dict:
+    def prepare_arguments(self, name: str, arguments: dict, question: str, previous_question: str | None = None) -> dict:
         named_product = self._named_product_id(question)
         if isinstance(arguments, dict) and name in {'get_product', 'get_price_quote'}:
             explicit_ids = requested_product_ids(question)
@@ -85,7 +85,7 @@ class ToolRuntime:
         if isinstance(arguments, dict) and name == "lookup_order" and requested_order_id(question) is not None:
             return {**arguments, "order_id": requested_order_id(question)}
         if name == "search_products" and isinstance(arguments, dict):
-            return catalog_arguments(question, arguments, self._catalog)
+            return catalog_arguments(question, arguments, self._catalog, previous_question)
         if name == "search_policies" and isinstance(arguments, dict) and online_return_question(question):
             return {**arguments, "query": question}
         return arguments

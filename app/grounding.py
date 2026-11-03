@@ -87,7 +87,7 @@ def requested_category_ids(question: str, catalog) -> set[int]:
     return found
 
 
-def catalog_arguments(question: str, arguments: dict, catalog) -> dict:
+def catalog_arguments(question: str, arguments: dict, catalog, previous_question: str | None = None) -> dict:
     """Build validated, structured search filters for one customer turn.
 
     Three separate things, never inferred from leftover words of the sentence:
@@ -115,6 +115,11 @@ def catalog_arguments(question: str, arguments: dict, catalog) -> dict:
     # Availability scope is the customer's explicit choice, never the model's guess.
     result['available_only'] = not explicit_unavailable
     categories = requested_category_ids(question, catalog)
+    if not categories and previous_question and type(model.get("category_id")) is int:
+        # "show me all the options then": the model may carry over a category, but
+        # only one the customer actually named in the immediately previous message.
+        if model["category_id"] in requested_category_ids(previous_question, catalog):
+            categories = {model["category_id"]}
     if len(categories) == 1:
         result["category_id"] = next(iter(categories))
     budget = requested_budget(question)

@@ -122,7 +122,7 @@ class CatalogRegressionTests(unittest.TestCase):
         tool = next(event for event in events if event.get("event") == "tool_result")
         self.assertEqual(tool["effective_arguments"]["product_id"], 1)
         self.assertIn("Test Nylon", result.text)
-        self.assertIn("Estoque registrado: 2 unidades", result.text)
+        self.assertIn("O cadastro registra 2 unidades", result.text)
         self.assertIn("não reserva o estoque", result.text)
 
     def test_explicit_two_product_comparison_overrides_previous_product(self):
@@ -208,8 +208,8 @@ class CatalogRegressionTests(unittest.TestCase):
             ProviderConfig(provider="ollama", model="qwen3:4b-instruct"), purchase_transport), self.tools)
         purchase = purchase_agent.run(
             "Tenho interesse em comprar duas unidades do violão de nylon. O estoque cobre?")
-        self.assertIn("cobre as 2 mencionadas", purchase.text)
-        self.assertIn("sobraria 0", purchase.text)
+        self.assertIn("O cadastro registra 2 unidades", purchase.text)
+        self.assertIn("as 2 unidades que você quer estão cobertas", purchase.text)
         self.assertIn("não reserva o estoque nem cria um pedido", purchase.text)
         purchase_transport.assert_not_called()
 

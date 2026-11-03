@@ -20,6 +20,8 @@ from app.conversation import (memory_exchange, assistant_text, conversation_ques
 from app.conversation import product_followup, failure_followup
 from app.conversation import conversational_intent
 from app.policies import normalize
+from app.session_state import ConversationState
+from app.grounding import requested_category_ids, brl
 import re
 
 
@@ -76,6 +78,8 @@ class AgentResult:
     text: str
     tools_called: tuple[str, ...] = ()
     catalog: CatalogView | None = None
+    # Follow-up question shown with a catalog list (e.g. which model to buy).
+    catalog_prompt: str | None = None
 
 
 class Agent:
@@ -87,12 +91,11 @@ class Agent:
         self._provider, self._tools = provider, tools
         self._max_requests, self._max_tool_calls = max_requests, max_tool_calls
         self._turns: list[list[dict]] = []
-        self._catalog_product_ids = ()
+        # Single source of conversational context for this session.
+        self._state = ConversationState()
         if type(order_id) is not int or not 1 <= order_id < 10**12:
             raise ConfigurationError('Invalid trusted session order')
         self._order_id = order_id
-        self._last_product_ids = ()
-        self._recent_product_ids = ()
         self._last_results = []
         self._last_fact_question = ''
         self._last_failure = None
@@ -106,21 +109,42 @@ class Agent:
     def reset(self):
         """Forget conversation evidence without changing the bound identity."""
         self._turns.clear()
-        self._catalog_product_ids = ()
-        self._last_product_ids = ()
-        self._recent_product_ids = ()
+        self._state.reset()
         self._last_results = []
         self._last_fact_question = ''
         self._last_failure = None
 
+    # Legacy names kept as views of the single conversation state.
+    @property
+    def _catalog_product_ids(self):
+        return self._state.displayed_ids
+
+    @_catalog_product_ids.setter
+    def _catalog_product_ids(self, value):
+        self._state.displayed_ids = tuple(value)
+
+    @property
+    def _last_product_ids(self):
+        return self._state.focus_ids
+
+    @_last_product_ids.setter
+    def _last_product_ids(self, value):
+        self._state.focus_ids = tuple(value)
+
+    @property
+    def _recent_product_ids(self):
+        return self._state.recent_ids
+
+    @_recent_product_ids.setter
+    def _recent_product_ids(self, value):
+        self._state.recent_ids = tuple(value)
+
     def focus_product(self, product_id):
         """Trusted UI selection, constrained to this session's verified list."""
-        if product_id not in self._catalog_product_ids:
+        if product_id not in self._state.displayed_ids:
             raise ValueError('Product is not in the current verified catalog')
         self._tools._catalog.get_product(product_id)
-        self._last_product_ids = (product_id,)
-        self._recent_product_ids = tuple(i for i in self._recent_product_ids if i != product_id) + (product_id,)
-        self._recent_product_ids = self._recent_product_ids[-6:]
+        self._state.focus((product_id,))
 
     def _recent_named_product_id(self, question):
         """Prefer a unique explicit catalog match, then use verified recent items."""
@@ -133,7 +157,8 @@ class Agent:
             if len(recent_matches) == 1:
                 return recent_matches[0]
             return None
-        words = set(re.findall(r'\w+', normalize(question))) - {
+        # Pure numbers are quantities or prices, never evidence of a product name ("HL-5").
+        words = {w for w in re.findall(r'\w+', normalize(question)) if not w.isdigit()} - {
             'esse', 'essa', 'este', 'esta', 'aquele', 'aquela', 'de', 'do', 'da', 'o', 'a', 'que',
             'e', 'se', 'eu', 'no', 'na', 'com', 'por', 'quanto', 'preco', 'valor', 'custa', 'aceita', 'aceitam',
             'pix', 'desconto', 'disponivel', 'tem', 'estoque', 'stock', 'price', 'available',
@@ -211,7 +236,7 @@ class Agent:
         self._last_failure = failure
         return result
 
-    def _finish(self, question, history, called, results, answer, native, *, guarded=True):
+    def _finish(self, question, history, called, results, answer, native, *, guarded=True, catalog_prompt=None):
         self._emit({'event': 'final_response', 'text': answer, 'guarded': guarded})
         catalog = None
         # A successful search is shown as the browsable list unless this turn is
@@ -226,8 +251,9 @@ class Agent:
                     catalog = build_catalog_view(self._tools._catalog, result['data'], synthetic=self._tools.is_synthetic)
                     # List positions always refer to the last NON-EMPTY list the
                     # customer actually saw; an empty search leaves it unchanged.
-                    if catalog.entries:
-                        self._catalog_product_ids = tuple(entry.product_id for entry in catalog.entries)
+                    category_ids = result['data'].get('filters', {}).get('category_ids') or []
+                    self._state.show_list(tuple(entry.product_id for entry in catalog.entries),
+                                          category_ids[0] if len(category_ids) == 1 else None)
         history.append({'role': 'assistant', 'native': native})
         previous_count = sum(len(exchange) for exchange in self._turns)
         self._turns.append(memory_exchange(history[previous_count:]))
@@ -243,23 +269,172 @@ class Agent:
             self._last_fact_question = question
             products = tuple(dict.fromkeys(result['data']['product_id'] for name, result in results
                 if name in {'get_product', 'get_price_quote'} and result.get('status') == 'ok'))
-            if products:
-                self._last_product_ids = products
-                self._recent_product_ids = (tuple(i for i in self._recent_product_ids if i not in products) + products)[-6:]
             listed = tuple(dict.fromkeys(row['product_id'] for name, result in results
                 if name == 'search_products' and result.get('status') == 'ok'
                 for row in result.get('data', {}).get('products', [])))
-            if listed:
-                self._last_product_ids = ()
-                self._recent_product_ids = (tuple(i for i in self._recent_product_ids if i not in listed) + listed)[-6:]
+            if products:
+                # The full product card is what the deterministic renderer shows.
+                self._state.focus(products, card_shown=len(products) == 1 and (
+                    'Estoque registrado' in answer or 'Recorded stock' in answer))
+            elif listed and catalog is None:
+                self._state.focus_ids = ()
+                self._state.remember(listed)
         self._last_failure = None
-        return AgentResult('answered', answer, tuple(called), catalog)
+        return AgentResult('answered', answer, tuple(called), catalog, catalog_prompt)
+
+    # ------------------------------------------------------------------ purchase
+    def _quantity(self, question):
+        """Quantity the customer stated, never a number that is part of a name/ID/position."""
+        quantity = requested_quantity(question)
+        if quantity is not None:
+            return quantity
+        if not (self._state.purchase and self._state.purchase.product_id is not None):
+            return None
+        # During a purchase, a lone number ("vou querer 2") is the quantity, unless it
+        # belongs to a list position, a record ID or a product name ("HL-5", "C40").
+        text = re.sub(r'\b(?:item|produto|product|id)\s+#?\d+\b', ' ', normalize(question))
+        numbers = re.findall(r'(?<![\w-])(\d{1,4})(?![\w-])', text)
+        return int(numbers[0]) if len(numbers) == 1 and int(numbers[0]) > 0 else None
+
+    def _without_quantity(self, question, quantity):
+        if quantity is None:
+            return question
+        return re.sub(rf'(?<![\w-]){quantity}(?![\w-])', ' ', question)
+
+    def _end_purchase_on_category_change(self, question):
+        """A message naming another category ends the product purchase in progress.
+
+        Applied before anything else in the turn, so a later quantity can never be
+        attributed to the earlier product even if this turn fails.
+        """
+        purchase = self._state.purchase
+        if not (purchase and purchase.product_id is not None):
+            return
+        categories = requested_category_ids(question, self._tools._catalog)
+        product = self._tools._catalog.get_product(purchase.product_id)
+        if categories and product.category_id not in categories:
+            self._state.purchase = None
+            self._state.focus_ids = ()
+            self._state.card_shown_for = None
+
+    def _purchase_step(self, question):
+        """Explicit purchase interest, or a quantity for a purchase already in progress."""
+        if purchase_interest(question):
+            return True
+        purchase = self._state.purchase
+        if requested_quantity(question) is not None and self._state.selected_id is not None:
+            return not self._tools._named_product_matches(self._without_quantity(question, requested_quantity(question)))
+        return bool(purchase and purchase.product_id is not None and self._quantity(question) is not None
+                    and not requested_product_ids(question))
+
+    def _verified(self, called, results, name, arguments, question):
+        effective = self._tools.prepare_arguments(name, arguments, question)
+        try:
+            result = self._tools.execute(name, effective)
+        except Exception as error:
+            self._emit({'event': 'unexpected_failure', 'phase': 'tool', 'exception_type': type(error).__name__})
+            result = {'status': 'error', 'error': 'tool_failure'}
+        self._emit({'event': 'tool_result', 'name': name, 'requested_arguments': arguments,
+                    'effective_arguments': effective, 'result': result, 'source': 'purchase_flow'})
+        called.append(name)
+        results.append((name, result))
+        return result
+
+    def _purchase(self, question, history, language):
+        """Advance a purchase conversation with verified facts; never place or reserve an order."""
+        en = language == 'en'
+        catalog = self._tools._catalog
+        quantity = self._quantity(question)
+        text = self._without_quantity(question, quantity)
+        explicit = requested_product_ids(text)
+        named = self._tools._named_product_matches(text) if not explicit else ()
+        categories = requested_category_ids(text, catalog)
+        selected = self._state.selected_id or (self._state.purchase.product_id if self._state.purchase else None)
+        called, results = [], []
+
+        target = None
+        if len(explicit) == 1:
+            target = explicit[0]
+        elif len(explicit) > 1:
+            return self._plain(question, history, 'Which of these instruments do you want to buy?' if en else
+                               'Qual desses instrumentos você quer comprar?')
+        elif len(named) == 1:
+            target = named[0]
+        elif selected is not None and (not categories or catalog.get_product(selected).category_id in categories) \
+                and not (named and selected not in named):
+            target = selected  # "comprar ele", "quero 2", "essa bateria": the product in focus
+
+        if target is None and (categories or named):
+            # No model chosen yet: show the matching options and ask which one.
+            search = self._verified(called, results, 'search_products', {}, text)
+            if search.get('status') != 'ok':
+                return self._failure('tool_error', language, called, search.get('error', 'tool_failure'))
+            data = search['data']
+            category_id = next(iter(categories)) if len(categories) == 1 else None
+            self._state.want(category_id=category_id, quantity=quantity)
+            if not data['total_matches']:
+                answer = self._tools.grounded_answer(text, results, '')
+                return self._finish(question, history, called, results, answer, {'role': 'assistant', 'content': answer})
+            prompt = ('Which model interests you? If you already know, tell me how many units too.' if en else
+                      'Qual modelo te interessa? Se já souber, me diga também quantas unidades.')
+            answer = self._tools.grounded_answer(text, results, '') + '\n\n' + prompt
+            return self._finish(question, history, called, results, answer,
+                                {'role': 'assistant', 'content': answer}, catalog_prompt=prompt)
+
+        if target is None:
+            self._state.want(quantity=quantity)
+            return self._plain(question, history,
+                'Which instruments do you have in mind? I can show options by category, brand or budget and check stock '
+                'and prices, but I do not complete purchases or reserve orders.' if en else
+                'Quais instrumentos você tem em mente? Posso mostrar opções por categoria, marca ou faixa de preço e '
+                'conferir estoque e preços, mas não finalizo compras nem reservo pedidos.')
+
+        product = self._verified(called, results, 'get_product', {'product_id': target}, question)
+        if product.get('status') != 'ok':
+            return self._failure('tool_error', language, called, product.get('error', 'tool_failure'))
+        data = product['data']
+        name, stock = data['name'], data['recorded_stock_quantity']
+        try:  # same deterministic pricing service the product renderer uses
+            price = brl(catalog.get_price_quote(target).final_price_brl)
+        except Exception:
+            price = None
+        already_seen = self._state.card_shown_for == target
+        self._state.focus((target,))
+        self._state.want(product_id=target, quantity=quantity)
+        units = lambda n: f"{n} {'unit' if n == 1 else 'units'}" if en else f"{n} {'unidade' if n == 1 else 'unidades'}"
+        no_order = ("This lookup does not reserve stock or create an order; the store team completes the purchase."
+                    if en else "Esta consulta não reserva o estoque nem cria um pedido; a equipe da loja conclui a compra.")
+        if not data['available'] or not stock:
+            answer = (f"{name} is currently recorded as unavailable, so I can't confirm it for purchase. "
+                      "Would you like to see similar options?" if en else
+                      f"{name} consta como indisponível no cadastro, então não consigo confirmar a compra. "
+                      "Quer ver opções parecidas?")
+        elif quantity is None:
+            summary = '' if already_seen or price is None else (
+                f" It costs {price} per unit and the catalog records {units(stock)}." if en else
+                f" O valor é {price} por unidade e o cadastro registra {units(stock)}.")
+            answer = (f"Great choice: {name}.{summary} How many units would you like?" if en else
+                      f"Ótima escolha: {name}.{summary} Quantas unidades você quer?")
+        elif quantity <= stock:
+            unit_price = (f" ({price} per unit)" if en else f" ({price} por unidade)") if price else ''
+            answer = (f"The catalog records {units(stock)} of {name}, so the {units(quantity)} you want are covered"
+                      f"{unit_price}. {no_order} I can check the PIX price or answer anything else first." if en else
+                      f"O cadastro registra {units(stock)} de {name}, então {'a' if quantity == 1 else 'as'} "
+                      f"{units(quantity)} que você quer {'está coberta' if quantity == 1 else 'estão cobertas'}"
+                      f"{unit_price}. {no_order} Posso conferir o valor no PIX ou tirar outra dúvida antes.")
+        else:
+            answer = (f"You mentioned {units(quantity)}, but the catalog records only {units(stock)} of {name}; "
+                      f"I can't confirm the full quantity. {no_order} Would you like to continue with {units(stock)}?" if en else
+                      f"Você mencionou {units(quantity)}, mas o cadastro registra só {units(stock)} de {name}; "
+                      f"não consigo confirmar essa quantidade completa. {no_order} Quer seguir com {units(stock)}?")
+        return self._finish(question, history, called, results, answer, {'role': 'assistant', 'content': answer})
 
     def run(self, question: str) -> AgentResult:
         if not isinstance(question, str) or not question.strip() or len(question) > 4000:
             return AgentResult('invalid_input', 'Please send a nonempty question of at most 4000 characters.' if
                 isinstance(question,str) and language_hint(question) == 'en' else
                 'Envie uma pergunta com até 4000 caracteres para que eu possa ajudar.')
+        self._end_purchase_on_category_change(question)
         intent = conversational_intent(question)
         # A request to simplify inherits the immediate topic, but only answer
         # directly when that topic is a general comparison with stable guidance.
@@ -376,7 +551,7 @@ class Agent:
                 if language != 'en' and references:
                     answer = 'Essa orientação aparece em ' + '; '.join(references) + '.'
                 return self._plain(question, history, answer)
-            if requested_order_id(question) is not None or purchase_interest(question):
+            if requested_order_id(question) is not None or self._purchase_step(question):
                 decision, language = 'shop', language_hint(question) or 'pt'
                 self._emit({'event': 'scope_decision', 'status': 'shop'})
             else:
@@ -473,32 +648,9 @@ class Agent:
                             'Which of the previously discussed instruments should I compare? ' + names + '.')
                 if len(resolved_comparison) >= 2:
                     question += '\n' + ', '.join(f'Produto ID {product_id}' for product_id in resolved_comparison) + '.'
-            if purchase_interest(question):
-                quantity = requested_quantity(question)
-                references = requested_product_ids(question)
-                if not references and len(current_named_products) == 1:
-                    references = current_named_products
-                elif not references and len(current_named_products) > 1:
-                    return self._plain(question, history,
-                        'Which instrument do you mean? I found more than one matching catalog option.' if language == 'en' else
-                        'Qual instrumento você quer consultar? Encontrei mais de uma opção compatível no catálogo.')
-                generic_multi_item = bool(re.search(r'\b(?:produtos?|instrumentos?)\b', normalize(question)))
-                if (not references and len(self._last_product_ids) == 1
-                        and (product_followup(question) or (quantity is not None and not generic_multi_item))):
-                    # A standalone purchase quantity refers to the single
-                    # product most recently verified in this session, unless
-                    # the customer explicitly asks for generic multiple items.
-                    references = self._last_product_ids
-                if len(references) == 1:
-                    # Carry a trusted, already-resolved product into the factual
-                    # tool path. Purchase intent never creates or reserves an order.
-                    question += f'\nProduto ID {references[0]}.'
-                    if quantity is not None:
-                        question += f' Quantidade mencionada: {quantity} unidades.'
-                else:
-                    return self._plain(question, history,
-                        'Which instruments do you have in mind? I can check stock and prices, but cannot complete or reserve an order.' if language == 'en' else
-                        'Quais instrumentos você tem em mente? Posso conferir estoque e preços, mas não finalizo compras nem crio ou reservo pedidos.')
+            if self._purchase_step(question) and not comparison:
+                # Purchase conversations advance with verified facts only; nothing is ordered.
+                return self._purchase(question, history, language)
             if explanation_followup(question) and self._last_failure:
                 return self._plain(question, history, failure_message(self._last_failure, language == 'en'))
             explicit_other = re.search(r'\b(?:outro|outra|other)\b.*\b(?:produto|instrumento|product|instrument|viol\w*|guit\w*|ukulel\w*|baix\w*)\b', normalize(question))
@@ -550,9 +702,11 @@ class Agent:
                         return self._plain(question, history,
                             'Qual modelo você quer consultar? Encontrei mais de uma opção compatível no catálogo.' if language == 'pt' else
                             'Which model would you like me to check? I found more than one matching catalog option.')
+            # A price/stock question that names no other product or category refers to
+            # the product(s) in focus; the selected product is the session's context.
             if (not requested_product_ids(question) and self._last_product_ids
-                    and product_followup(question)
-                    and self._tools.required_evidence(question) != 'search_products'
+                    and not current_named_products
+                    and not requested_category_ids(question, self._tools._catalog)
                     and re.search(r'\b(?:preco\w*|valor|pix|pag\w*|estoque|dispon\w*|availability|available|price|cost|stock|promoc\w*|desconto|discount)\b', normalize(question))
                     and not re.search(r'\d|\b(?:pedido|order|todos|todas|all|catalogo|catalog)\b', normalize(question))):
                 if len(self._last_product_ids) == 1:
@@ -709,7 +863,8 @@ class Agent:
                     break
                 history.append({"role": "assistant", "native": reply.native})
                 for call in reply.calls:
-                    effective = self._tools.prepare_arguments(call.name, call.arguments, question)
+                    effective = self._tools.prepare_arguments(call.name, call.arguments, question,
+                                                              previous_questions[-1] if previous_questions else None)
                     references = requested_product_ids(question)
                     cache_key = None
                     if isinstance(effective, dict) and call.name in {
@@ -751,11 +906,13 @@ class Agent:
                         if executed or result.get('status') == 'error':
                             called.append(call.name)
                     history.append({"role": "tool", "name": call.name, "call_id": call.call_id, "result": result})
-                # Large lists are already formatted from verified Python results.
-                # Avoid asking the model to reproduce 65 rows and exhaust tokens.
+                # A successful catalog search is rendered from verified Python results;
+                # with the local model (as for the other deterministic fast paths) a
+                # draft would be discarded, so do not request one. Large lists always skip it.
                 if (len(current_results) == 1 and current_results[0][0] == 'search_products'
                         and current_results[0][1].get('status') == 'ok'
-                        and len(current_results[0][1]['data']['products']) > 10
+                        and (isinstance(self._provider, OllamaProvider)
+                             or len(current_results[0][1]['data']['products']) > 10)
                         and self._tools.required_evidence(question) in (None, 'search_products')
                         and not online_return_question(question)):
                     answer = self._tools.grounded_answer(question, current_results, '')

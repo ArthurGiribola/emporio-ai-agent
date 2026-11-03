@@ -396,7 +396,7 @@ class ReliabilityTests(unittest.TestCase):
 
         self.assertEqual(answer.tools_called, ('get_product',))
         self.assertIn(product.name, answer.text)
-        self.assertIn('cobre as 2 mencionadas', answer.text)
+        self.assertIn('as 2 unidades que você quer estão cobertas', answer.text)
         self.assertIn(f'O cadastro registra {product.stock_quantity} unidades', answer.text)
         self.assertIn('não reserva o estoque nem cria um pedido', answer.text)
         self.assertNotIn('Quais instrumentos', answer.text)
