@@ -160,7 +160,13 @@ def explanation_followup(question):
 def product_followup(question):
     """Only pronouns/elliptical questions inherit a selection, never a new name."""
     t = normalize(question)
-    if (re.search(r'\b(?:ele|ela|dele|dela|deles|delas|esse|essa|este|esta|isso|disso|daquele|daquela|'
+    # Normalization turns the verb "está" into "esta". Treat normalized
+    # "esta" as a pronoun only when it is actually written that way, and not
+    # when it introduces a state/description such as "está marcada".
+    state_description = bool(re.search(
+        r'\besta\s+(?:marcad\w*|registrad\w*|anotad\w*|indicad\w*|listad\w*)\b', t))
+    demonstrative_esta = bool(re.search(r'\besta\b', question, re.IGNORECASE) and not state_description)
+    if (demonstrative_esta or re.search(r'\b(?:ele|ela|dele|dela|deles|delas|esse|essa|este|isso|disso|daquele|daquela|'
                   r'dessa|desse|it|its|that|this|both)\b|\bos dois\b', t)
             or (re.match(r'^(?:e|ah e|voltando|sobre)\b', t)
                 and re.search(r'\b(?:pre\w*|valor|custa|quanto|pix|pag\w*|estoque|disponivel|stock|available)\b', t))):

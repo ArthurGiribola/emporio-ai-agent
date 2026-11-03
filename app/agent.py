@@ -122,7 +122,16 @@ class Agent:
         self._recent_product_ids = self._recent_product_ids[-6:]
 
     def _recent_named_product_id(self, question):
-        """Resolve a descriptive follow-up only among products verified this session."""
+        """Prefer a unique explicit catalog match, then use verified recent items."""
+        named_matches = self._tools._named_product_matches(question)
+        if len(named_matches) == 1:
+            return named_matches[0]
+        if len(named_matches) > 1:
+            recent_matches = [product_id for product_id in self._recent_product_ids
+                              if product_id in named_matches]
+            if len(recent_matches) == 1:
+                return recent_matches[0]
+            return None
         words = set(re.findall(r'\w+', normalize(question))) - {
             'esse', 'essa', 'este', 'esta', 'aquele', 'aquela', 'de', 'do', 'da', 'o', 'a', 'que',
             'e', 'se', 'eu', 'no', 'na', 'com', 'por', 'quanto', 'preco', 'valor', 'custa', 'aceita', 'aceitam',
@@ -420,11 +429,19 @@ class Agent:
                     (order_record_followup(question) or re.search(r'\b(?:pedido|order|rastre\w*|tracking)\b', normalize(question)))):
                 question += f'\nPedido {self._order_id}.'
             if not requested_product_ids(question) and product_followup(question):
+                required_before_context = self._tools.required_evidence(question)
                 matched_recent = self._recent_named_product_id(question)
                 if matched_recent is not None:
                     question += f'\nProduto ID {matched_recent}.'
+                elif required_before_context != 'search_products':
+                    named_matches = self._tools._named_product_matches(question)
+                    if named_matches:
+                        return self._plain(question, history,
+                            'Qual modelo você quer consultar? Encontrei mais de uma opção compatível no catálogo.' if language == 'pt' else
+                            'Which model would you like me to check? I found more than one matching catalog option.')
             if (not requested_product_ids(question) and self._last_product_ids
                     and product_followup(question)
+                    and self._tools.required_evidence(question) != 'search_products'
                     and re.search(r'\b(?:preco\w*|valor|pix|pag\w*|estoque|dispon\w*|availability|available|price|cost|stock|promoc\w*|desconto|discount)\b', normalize(question))
                     and not re.search(r'\d|\b(?:pedido|order|todos|todas|all|catalogo|catalog)\b', normalize(question))):
                 if len(self._last_product_ids) == 1:

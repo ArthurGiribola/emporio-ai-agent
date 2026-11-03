@@ -88,8 +88,8 @@ class ToolRuntime:
             return {**arguments, "query": question}
         return arguments
 
-    def _named_product_id(self, question: str) -> int | None:
-        """Resolve a sufficiently specific product name; return None on ambiguity."""
+    def _named_product_matches(self, question: str) -> tuple[int, ...]:
+        """Return products tied for the strongest name/descriptor match."""
         # Very short Portuguese function words (notably "se" in a PIX
         # follow-up) are not product identifiers and must not match PRS SE.
         words = {word for word in re.findall(r"\w+", normalize(question)) if len(word) >= 3}
@@ -104,10 +104,14 @@ class ToolRuntime:
             if overlap:
                 matches.append((len(overlap), product.product_id))
         if not matches:
-            return None
+            return ()
         best = max(score for score, _ in matches)
-        winners = {product_id for score, product_id in matches if score == best}
-        return next(iter(winners)) if len(winners) == 1 else None
+        return tuple(sorted({product_id for score, product_id in matches if score == best}))
+
+    def _named_product_id(self, question: str) -> int | None:
+        """Resolve only a unique, sufficiently specific catalog match."""
+        matches = self._named_product_matches(question)
+        return matches[0] if len(matches) == 1 else None
 
     def required_evidence(self, question: str) -> str | None:
         text = normalize(question)
@@ -131,6 +135,20 @@ class ToolRuntime:
             return "get_price_quote"
         if requested_product_ids(question) and not re.search(r'\b(?:garantia|warranty|policy|politica|devolucao)\b', text):
             return 'get_product'
+        has_catalog_subject = bool(self._catalog.category_ids_from_text(question) or re.search(
+            r'\b(?:produt\w*|instrument\w*|model\w*|catalog\w*|viol\w*|guit\w*|ukulel\w*|baix\w*|teclad\w*|bateri\w*)\b', text))
+        has_multi_product_intent = bool(re.search(
+            r'\b(?:quais|mostr\w*|list\w*|busc\w*|procur\w*|opcoes|modelos|catalog\w*|'
+            r'all|every|everything|todos|todas|tudo|which|options|models|catalog|show)\b', text))
+        has_search_intent = bool(re.search(
+            r'\b(?:quais?|tem|temos|vende|mostr\w*|list\w*|busc\w*|procur\w*|opcoes|dispon\w*|'
+            r'estoque|stock|cheapest|lowest price|mais barato\w*|mais em conta|menor preco|algum|alguma|'
+            r'all|every|everything|todos|todas|tudo)\b', text))
+        # Group/category requests must take precedence over a distinctive
+        # descriptor (for example, "nylon") that happens to identify one
+        # product in a small demo catalog.
+        if has_catalog_subject and has_multi_product_intent:
+            return 'search_products'
         named = self._named_product_id(question)
         if named is not None:
             if price:
@@ -153,12 +171,6 @@ class ToolRuntime:
             return 'search_products'
         if wants_all(question):
             return 'search_products'
-        has_catalog_subject = bool(self._catalog.category_ids_from_text(question) or re.search(
-            r'\b(?:produt\w*|instrument\w*|model\w*|catalog\w*|viol\w*|guit\w*|ukulel\w*|baix\w*|teclad\w*|bateri\w*)\b', text))
-        has_search_intent = bool(re.search(
-            r'\b(?:quais?|tem|temos|vende|mostr\w*|list\w*|busc\w*|procur\w*|opcoes|dispon\w*|'
-            r'estoque|stock|cheapest|lowest price|mais barato\w*|mais em conta|menor preco|algum|alguma|'
-            r'all|every|everything|todos|todas|tudo)\b', text))
         if has_catalog_subject and (has_search_intent or price or stock or wants_all(question)):
             return 'search_products'
         return None

@@ -15,6 +15,7 @@ from app.providers import ProviderReply, ToolCall
 from app.repository import Repository, SCHEMAS
 from app.services import CatalogService
 from app.tool_runtime import ToolRuntime
+from app.conversation import product_followup
 from tests.helpers import fixture_rows, write_fixture
 from tests.policy_helpers import synthetic_pages, write_pdf
 
@@ -32,7 +33,10 @@ class CatalogRegressionTests(unittest.TestCase):
         rows = fixture_rows()
         ukulele = dict(rows["products"][0], product_id="6", category_id="2", name="Synthetic Baritone Ukulele",
                        description="Uma ponte entre o ukulele e o violão", price_brl="99")
-        rows["products"].append(ukulele)
+        steel = dict(rows["products"][0], product_id="7", category_id="1", name="Violão Sintético Aço",
+                     description="Synthetic steel-string guitar", price_brl="250", stock_quantity="5",
+                     specs='{"strings":"steel"}')
+        rows["products"].extend((ukulele, steel))
         for i in range(10, 17):
             rows["products"].append(dict(rows["products"][0], product_id=str(i), name=f"Synthetic Model {i}", price_brl=str(100 + i)))
         write_fixture(path, rows)
@@ -45,6 +49,64 @@ class CatalogRegressionTests(unittest.TestCase):
         self.assertEqual(len(products), 9)
         self.assertTrue(all(p.category_id == 1 and p.available for p in products))
         self.assertNotIn(6, {p.product_id for p in products})
+
+    def test_multi_product_queries_precede_unique_material_matches(self):
+        for question in (
+                "Quais violões de nylon estão registrados?",
+                "Mostre as opções de violões com cordas de aço.",
+                "Quais ukuleles estão disponíveis?"):
+            with self.subTest(question=question):
+                self.assertEqual(self.tools.required_evidence(question), "search_products")
+        for question in ("No catálogo de vocês, quais violões de nylon estão registrados?",
+                         "Quais violões de nylon aparecem no catálogo?"):
+            with self.subTest(search_phrase=question):
+                arguments = self.tools.prepare_arguments("search_products", {"query": "invented"}, question)
+                self.assertEqual(arguments["query"], "nylon")
+                data = self.tools.execute("search_products", arguments)["data"]
+                self.assertEqual([product["name"] for product in data["products"]], ["Test Nylon"])
+        self.assertEqual(self.tools.required_evidence("Qual é o estoque do produto ID 1?"), "get_product")
+        self.assertFalse(product_followup(
+            "Que quantidade está marcada no estoque?"))
+        self.assertTrue(product_followup("Esta, qual é o estoque?"))
+
+    def test_steel_followup_uses_explicit_material_instead_of_previous_nylon_id(self):
+        provider = Mock(external=False)
+        provider.complete.side_effect = [
+            ProviderReply("", (ToolCall("get_product", {"product_id": 1}),), {}),
+            ProviderReply("Nylon item", (), {}),
+            ProviderReply("", (ToolCall("get_product", {"product_id": 1}),), {}),
+            ProviderReply("Stale nylon answer", (), {}),
+        ]
+        events = []
+        agent = Agent(provider, self.tools, observer=events.append)
+        agent.run("Qual é o estoque do produto ID 1?")
+        result = agent.run("Mudando para o violão com cordas de aço: que quantidade está marcada no estoque?")
+        self.assertEqual(result.status, "answered")
+        call = [event for event in events if event.get("event") == "tool_result"][-1]
+        self.assertEqual(call["name"], "get_product")
+        self.assertEqual(call["effective_arguments"]["product_id"], 7)
+        self.assertIn("Violão Sintético Aço", result.text)
+
+    def test_explicit_steel_descriptor_overrides_previous_nylon_selection(self):
+        provider = Mock(external=False)
+        provider.complete.side_effect = [
+            ProviderReply("", (ToolCall("get_product", {"product_id": 1}),), {}),
+            ProviderReply("Nylon item", (), {}),
+            # Deliberately stale model argument: deterministic resolution must
+            # replace it with the uniquely named steel-string catalog item.
+            ProviderReply("", (ToolCall("get_product", {"product_id": 1}),), {}),
+            ProviderReply("Stale nylon answer", (), {}),
+        ]
+        events = []
+        agent = Agent(provider, self.tools, observer=events.append)
+        agent.run("Qual é o estoque do produto ID 1?")
+        result = agent.run("Esse de aço, qual estoque?")
+        self.assertEqual(result.status, "answered")
+        call = [event for event in events if event.get("event") == "tool_result"][-1]
+        self.assertEqual(call["name"], "get_product")
+        self.assertEqual(call["effective_arguments"]["product_id"], 7)
+        self.assertIn("Violão Sintético Aço", result.text)
+        self.assertIn("5 unidades", result.text)
 
     def test_all_results_and_partial_metadata_are_truthful(self):
         result = self.tools.execute("search_products", {"query": "violão", "max_price_brl": "150", "all_results": True})
