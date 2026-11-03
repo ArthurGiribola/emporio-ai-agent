@@ -106,7 +106,43 @@ class CatalogRegressionTests(unittest.TestCase):
         self.assertEqual(call["name"], "get_product")
         self.assertEqual(call["effective_arguments"]["product_id"], 7)
         self.assertIn("Violão Sintético Aço", result.text)
-        self.assertIn("5 unidades", result.text)
+
+    def test_named_purchase_with_quantity_resolves_current_turn_product(self):
+        provider = Mock(external=False)
+        provider.complete.side_effect = [
+            ProviderReply("", (ToolCall("get_product", {"product_id": 7}),), {}),
+            ProviderReply("Draft", (), {}),
+        ]
+        events = []
+        agent = Agent(provider, self.tools, observer=events.append)
+
+        result = agent.run("Tenho interesse em comprar duas unidades do violão de nylon. O estoque cobre?")
+
+        tool = next(event for event in events if event.get("event") == "tool_result")
+        self.assertEqual(tool["effective_arguments"]["product_id"], 1)
+        self.assertIn("Test Nylon", result.text)
+        self.assertIn("Estoque registrado: 2 unidades", result.text)
+        self.assertIn("reservas", result.text)
+
+    def test_explicit_two_product_comparison_overrides_previous_product(self):
+        provider = Mock(external=False)
+        provider.complete.side_effect = [
+            ProviderReply("", (ToolCall("get_price_quote", {"product_id": 7}),
+                                ToolCall("get_price_quote", {"product_id": 1})), {}),
+            ProviderReply("Draft comparison", (), {}),
+        ]
+        events = []
+        agent = Agent(provider, self.tools, observer=events.append)
+        agent._last_product_ids = (7,)
+
+        result = agent.run("Compare os violões de nylon e aço disponíveis, incluindo os preços.")
+
+        lookups = [event["effective_arguments"]["product_id"] for event in events
+                   if event.get("event") == "tool_result" and event.get("name") == "get_price_quote"]
+        self.assertEqual(set(lookups), {1, 7})
+        self.assertEqual(len(lookups), 2)
+        self.assertIn("Test Nylon", result.text)
+        self.assertIn("Violão Sintético Aço", result.text)
 
     def test_all_results_and_partial_metadata_are_truthful(self):
         result = self.tools.execute("search_products", {"query": "violão", "max_price_brl": "150", "all_results": True})

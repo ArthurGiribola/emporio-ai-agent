@@ -377,9 +377,19 @@ class Agent:
             question, clarification = resolve_list_reference(question, self._catalog_product_ids)
             if clarification:
                 return self._plain(question, history, clarification)
+            # Resolve products named in this turn before consulting selected
+            # product state. This prevents a prior focus from overriding an
+            # explicit product or a comparison naming multiple products.
+            current_named_products = self._tools._named_product_matches(question)
             if purchase_interest(question):
                 quantity = requested_quantity(question)
                 references = requested_product_ids(question)
+                if not references and len(current_named_products) == 1:
+                    references = current_named_products
+                elif not references and len(current_named_products) > 1:
+                    return self._plain(question, history,
+                        'Which instrument do you mean? I found more than one matching catalog option.' if language == 'en' else
+                        'Qual instrumento você quer consultar? Encontrei mais de uma opção compatível no catálogo.')
                 if not references and len(self._last_product_ids) == 1 and product_followup(question):
                     references = self._last_product_ids
                 if len(references) == 1:
@@ -425,12 +435,16 @@ class Agent:
                 answer = self._tools.grounded_answer(self._last_fact_question, self._last_results, '')
                 if answer:
                     return self._plain(question, history, answer)
+            if (not requested_product_ids(question) and len(current_named_products) > 1
+                    and re.search(r'compar|\b(?:os dois|ambos|both)\b', normalize(question))):
+                question += '\n' + ', '.join(f'Produto ID {i}' for i in current_named_products)
             if (requested_order_id(question) is None and
                     (order_record_followup(question) or re.search(r'\b(?:pedido|order|rastre\w*|tracking)\b', normalize(question)))):
                 question += f'\nPedido {self._order_id}.'
             if not requested_product_ids(question) and product_followup(question):
                 required_before_context = self._tools.required_evidence(question)
-                matched_recent = self._recent_named_product_id(question)
+                matched_recent = (None if len(current_named_products) > 1
+                                  else self._recent_named_product_id(question))
                 if matched_recent is not None:
                     question += f'\nProduto ID {matched_recent}.'
                 elif required_before_context != 'search_products':
