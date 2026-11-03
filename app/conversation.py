@@ -130,9 +130,13 @@ def requested_quantity(question):
         text)
     if match:
         return int(match[1])
-    number_words = "|".join(sorted(NUMERALS, key=len, reverse=True))
+    # Portuguese quantity agrees in gender with "unidade": both "dois" and
+    # "duas unidades" express the same count. Keep these aliases local to
+    # quantity parsing; elapsed policy-day parsing has separate semantics.
+    quantity_words = {**NUMERALS, "uma": "1", "duas": "2"}
+    number_words = "|".join(sorted(quantity_words, key=len, reverse=True))
     word_match = re.search(r'\b(' + number_words + r')\s+(?:unidades?|units?|pecas?)\b', text)
-    return int(NUMERALS[word_match[1]]) if word_match else None
+    return int(quantity_words[word_match[1]]) if word_match else None
 
 
 def advisory_question(question):

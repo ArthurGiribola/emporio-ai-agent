@@ -11,7 +11,7 @@ from app.agent import Agent
 from tests.helpers import mock_shop_scope
 from app.orders import OrderService
 from app.policies import PolicyRetriever
-from app.providers import ProviderReply, ToolCall
+from app.providers import OllamaProvider, ProviderConfig, ProviderReply, ToolCall
 from app.repository import Repository, SCHEMAS
 from app.services import CatalogService
 from app.tool_runtime import ToolRuntime
@@ -123,7 +123,7 @@ class CatalogRegressionTests(unittest.TestCase):
         self.assertEqual(tool["effective_arguments"]["product_id"], 1)
         self.assertIn("Test Nylon", result.text)
         self.assertIn("Estoque registrado: 2 unidades", result.text)
-        self.assertIn("reservas", result.text)
+        self.assertIn("não reserva o estoque", result.text)
 
     def test_explicit_two_product_comparison_overrides_previous_product(self):
         provider = Mock(external=False)
@@ -153,6 +153,7 @@ class CatalogRegressionTests(unittest.TestCase):
                                          repeated, ProviderReply("Draft", (), {})]
         events = []
         agent = Agent(provider, self.tools, observer=events.append)
+        agent._deterministic_catalog_plan = lambda question: None
         execute = Mock(wraps=self.tools.execute)
         self.tools.execute = execute
 
@@ -183,6 +184,91 @@ class CatalogRegressionTests(unittest.TestCase):
 
         self.assertEqual(execute.call_count, 2)
         self.assertEqual(result.tools_called.count("search_policies"), 2)
+
+    def test_exact_catalog_facts_use_grounded_python_fast_path(self):
+        price_transport = Mock()
+        price_provider = OllamaProvider(ProviderConfig(provider="ollama", model="qwen3:4b-instruct"), price_transport)
+        price_agent = Agent(price_provider, self.tools)
+        price = price_agent.run("Qual o preço do produto ID 1 no Pix?")
+        self.assertEqual(price.status, "answered")
+        self.assertEqual(price.tools_called, ("get_price_quote",))
+        self.assertIn("R$ 90,09", price.text)
+        price_transport.assert_not_called()
+
+        stock_transport = Mock()
+        stock_agent = Agent(OllamaProvider(ProviderConfig(provider="ollama", model="qwen3:4b-instruct"),
+                                           stock_transport), self.tools)
+        stock = stock_agent.run("Qual é o estoque do produto ID 7?")
+        self.assertEqual(stock.tools_called, ("get_product",))
+        self.assertIn("Estoque registrado: 5 unidades", stock.text)
+        stock_transport.assert_not_called()
+
+        purchase_transport = Mock()
+        purchase_agent = Agent(OllamaProvider(
+            ProviderConfig(provider="ollama", model="qwen3:4b-instruct"), purchase_transport), self.tools)
+        purchase = purchase_agent.run(
+            "Tenho interesse em comprar duas unidades do violão de nylon. O estoque cobre?")
+        self.assertIn("cobre as 2 mencionadas", purchase.text)
+        self.assertIn("sobraria 0", purchase.text)
+        self.assertIn("não reserva o estoque nem cria um pedido", purchase.text)
+        purchase_transport.assert_not_called()
+
+        invalid_transport = Mock()
+        invalid_agent = Agent(OllamaProvider(
+            ProviderConfig(provider="ollama", model="qwen3:4b-instruct"), invalid_transport), self.tools)
+        invalid = invalid_agent.run("Qual é o estoque do produto ID 999?")
+        self.assertEqual(invalid.status, "tool_error")
+        self.assertIn("product identifier was not found", invalid.text)
+        invalid_transport.assert_not_called()
+
+    def test_explicit_multi_product_price_comparison_uses_distinct_quotes(self):
+        transport = Mock()
+        provider = OllamaProvider(ProviderConfig(provider="ollama", model="qwen3:4b-instruct"), transport)
+        events = []
+        agent = Agent(provider, self.tools, observer=events.append)
+        agent._last_product_ids = (7,)
+
+        result = agent.run("Compare o preço do produto ID 1 e do produto ID 7.")
+
+        quotes = [e for e in events if e.get("event") == "tool_result"]
+        self.assertEqual([e["effective_arguments"]["product_id"] for e in quotes], [1, 7])
+        self.assertEqual(result.tools_called, ("get_price_quote", "get_price_quote"))
+        self.assertIn("Test Nylon", result.text)
+        self.assertIn("Violão Sintético Aço", result.text)
+        transport.assert_not_called()
+
+    def test_catalog_browsing_and_policy_questions_stay_outside_product_fast_path(self):
+        provider = Mock(external=False)
+        provider.complete.side_effect = [
+            ProviderReply("", (ToolCall("search_products", {"query": "violão"}),), {}),
+            ProviderReply("Encontrei opções no catálogo.", (), {}),
+            ProviderReply("", (ToolCall("search_policies", {"query": "devolução"}),), {}),
+            ProviderReply("A política permite solicitar em até sete dias. Fonte: seção 4.1, página 8.", (), {}),
+        ]
+        agent = Agent(provider, self.tools)
+
+        catalog = agent.run("Quais violões estão disponíveis?")
+        policy = agent.run("Qual o prazo para devolução online?")
+
+        self.assertIn("search_products", catalog.tools_called)
+        self.assertIn("search_policies", policy.tools_called)
+        self.assertEqual(provider.complete.call_count, 4)
+
+    def test_mixed_price_and_recommendation_turn_stays_on_model_path(self):
+        transport = Mock()
+        provider = OllamaProvider(ProviderConfig(provider="ollama", model="qwen3:4b-instruct"), transport)
+        provider.complete = Mock(side_effect=[
+            ProviderReply("", (ToolCall("get_price_quote", {"product_id": 1}),), {}),
+            ProviderReply("O produto custa R$ 90,09. Para recomendar melhor, preciso saber o que você pretende tocar.", (), {}),
+        ])
+        events = []
+        agent = Agent(provider, self.tools, observer=events.append)
+
+        result = agent.run("Qual é o preço do produto ID 1 e qual instrumento você recomenda para começar?")
+
+        self.assertEqual(provider.complete.call_count, 2)
+        self.assertFalse(any(event.get("event") == "deterministic_fast_path" for event in events))
+        self.assertEqual(result.status, "answered")
 
     def test_all_results_and_partial_metadata_are_truthful(self):
         result = self.tools.execute("search_products", {"query": "violão", "max_price_brl": "150", "all_results": True})

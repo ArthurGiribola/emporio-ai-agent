@@ -4,7 +4,7 @@ import copy
 import json
 from dataclasses import dataclass
 
-from app.providers import ConfigurationError, ProviderError
+from app.providers import ConfigurationError, OllamaProvider, ProviderError
 from app.cloud_privacy import project_synthetic_question
 from app.synthetic import SyntheticTools
 from app.tool_runtime import ToolRuntime
@@ -153,6 +153,47 @@ class Agent:
         best = max(score for score, _ in candidates)
         matches = {product_id for score, product_id in candidates if score == best}
         return next(iter(matches)) if len(matches) == 1 else None
+
+    def _deterministic_catalog_plan(self, question):
+        """Return a narrow plan only for clear, grounded product facts."""
+        tool = self._tools.required_evidence(question)
+        if tool not in {'get_product', 'get_price_quote'}:
+            return None
+        text = normalize(question)
+        # Mixed advice/fact turns stay with the conversational model path; the
+        # fast path is only for a single, clear product fact request.
+        if re.search(r'\b(?:recomenda\w*|sugere\w*|orienta\w*|opina\w*|'
+                     r'help me choose|recommend\w*|suggest\w*|what do you think|'
+                     r'por onde comec\w*|qual combina comigo|o que acha)\b', text):
+            return None
+        references = requested_product_ids(question)
+        if not references:
+            named = self._tools._named_product_id(question)
+            references = (named,) if named is not None else ()
+        references = tuple(dict.fromkeys(references))
+        if not references or len(references) > 6:
+            return None
+
+        price_signal = bool(re.search(
+            r'\b(?:preco\w*|valor|quanto|custa|sai|fica|price|cost|pix|desconto|promoc\w*)\b', text))
+        stock_signal = bool(re.search(
+            r'\b(?:estoque|stock|dispon\w*|unidade\w*|sobrando|cobre|quantidade)\b', text))
+        comparison = bool(re.search(
+            r'\b(?:compar\w*|compare|versus|\bvs\b|diferenc\w*|differences?)\b', text))
+
+        if tool == 'get_price_quote' and price_signal:
+            if len(references) == 1 or (len(references) > 1 and comparison):
+                return tool, references
+        if (tool == 'get_product' and len(references) == 1 and stock_signal
+                and (requested_quantity(question) is not None or not comparison)):
+            return tool, references
+        # Purchase intent with an explicitly named product and quantity also
+        # has a deterministic stock answer, even when the customer didn't say
+        # “stock” in the same message.
+        if (tool == 'get_product' and len(references) == 1 and purchase_interest(question)
+                and requested_quantity(question) is not None):
+            return tool, references
+        return None
 
     def _failure(self, status, language, called=(), reason=None):
         reason = reason or status
@@ -483,6 +524,37 @@ class Agent:
             if (not requested_product_ids(question) and self._last_product_ids
                     and re.search(r'compar|\b(?:os dois|ambos|both)\b', normalize(question))):
                 question += '\n' + ', '.join(f'Produto ID {i}' for i in self._last_product_ids)
+            deterministic_plan = (self._deterministic_catalog_plan(question)
+                                  if isinstance(self._provider, OllamaProvider) else None)
+            if deterministic_plan is not None:
+                tool_name, product_ids = deterministic_plan
+                self._emit({'event': 'deterministic_fast_path', 'tool': tool_name,
+                            'product_count': len(product_ids)})
+                for product_id in product_ids:
+                    requested = {'product_id': product_id}
+                    effective = self._tools.prepare_arguments(tool_name, requested, question)
+                    try:
+                        result = self._tools.execute(tool_name, effective)
+                    except Exception as error:
+                        self._emit({'event': 'unexpected_failure', 'phase': 'tool',
+                                    'exception_type': type(error).__name__})
+                        result = {'status': 'error', 'error': 'tool_failure'}
+                    self._emit({'event': 'tool_result', 'name': tool_name,
+                                'requested_arguments': requested,
+                                'effective_arguments': effective, 'result': result,
+                                'source': 'deterministic_fast_path'})
+                    current_results.append((tool_name, result))
+                    called.append(tool_name)
+                if current_results and not any(result.get('status') == 'ok'
+                                               for _name, result in current_results):
+                    return self._failure('tool_error', language, called,
+                                         current_results[-1][1].get('error', 'tool_failure'))
+                answer = self._tools.grounded_answer(question, current_results, '')
+                if not answer.strip():
+                    return self._failure('unverified', language, called)
+                native = ({'role': 'model', 'parts': [{'text': answer}]} if self._provider.external else
+                          {'role': 'assistant', 'content': answer})
+                return self._finish(question, history, called, current_results, answer, native)
             retried_response = False
             retried_advice = False
             rejected_advice = None

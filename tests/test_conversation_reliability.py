@@ -438,6 +438,8 @@ class ReliabilityTests(unittest.TestCase):
     def test_word_quantity_compares_requested_units_with_verified_stock(self):
         from app.conversation import requested_quantity
         self.assertEqual(requested_quantity('quatro unidades desse instrumento'), 4)
+        self.assertEqual(requested_quantity('duas unidades do violão'), 2)
+        self.assertEqual(requested_quantity('uma unidade do instrumento'), 1)
         self.assertEqual(requested_quantity('6 unidades do instrumento'), 6)
         self.assertIsNone(requested_quantity('Qual é o estoque do item 63?'))
 
