@@ -214,6 +214,28 @@ process crash is outside the normal-close cleanup guarantee. Dependencies and
 WebView2 must be installed separately; the launcher does not install them.
 See [desktop verification](docs/DESKTOP.md) for tests, boundaries, and limitations.
 
+The double-click `Abrir Emporio - DEMO.cmd` and `Abrir Emporio - LOCAL.cmd`
+launchers use a separate `.venv-desktop` environment. Create and install it once
+from the repository root; the launchers do not install dependencies:
+
+```powershell
+py -3.12 -m venv .venv-desktop
+.\.venv-desktop\Scripts\python.exe -m pip install -e ".[desktop]"
+```
+
+If Python 3.12 was installed through `uv` and is not registered with the Windows
+Python Launcher, create the environment with its discovered interpreter instead:
+
+```powershell
+$python312 = uv python find 3.12
+& $python312 -m venv .venv-desktop
+.\.venv-desktop\Scripts\python.exe -m pip install -e ".[desktop]"
+```
+
+DEMO works without the original data files. LOCAL expects the six authorized CSVs
+and policy PDF in `data/`; it starts without order identity access. Both launchers
+use local Ollama and require the `qwen3:4b-instruct` model to be installed.
+
 ### DEMO and LOCAL data modes
 
 Both modes use the exact same mini-chat and local Ollama. The active mode is
@@ -346,8 +368,11 @@ No data is silently routed from Ollama to Gemini.
 - Retrieved text is untrusted reference data. Prompts direct the model to cite
   sources, preserve cautions, and never execute document instructions. These
   controls do not prove that generated prose is always correct; review actual
-  model behavior before claiming success. A first-turn answer without any tool
-  evidence is withheld. Later turns may reuse the same session's snapshot evidence.
+  model behavior before claiming success. Factual claims about store products,
+  prices, promotions, policies, and orders require verified service evidence.
+  Greetings, introductions, and general conversational guidance can be answered
+  without a business-tool call. Later turns may reuse the same session's verified
+  snapshot evidence when the question is still about that evidence.
 - PDF parsing targets the supplied numbered-heading profile; no OCR. Missing,
   encrypted, malformed, scanned/blank, or unsupported layouts fail clearly.
 - Demo binding is not production authentication or a sandbox against hostile
@@ -385,6 +410,26 @@ claimed. See [final evaluation](docs/FINAL_EVALUATION.md) for executed results,
 public-only installation checks, and audit limits, and
 [provider verification](docs/PROVIDERS.md) for dated official links. Prior phase records
 remain under `docs/`.
+
+### Recent real Ollama conversation evaluations
+
+The current Portuguese conversation suites were run with the real local
+`qwen3:4b-instruct` model against synthetic DEMO fixtures: **51/51 turns passed**
+in the primary suite and **48/48 turns passed** in the additional paraphrase suite.
+Mean observed latency was about 2.1 seconds and 2.3 seconds per turn, respectively.
+These are small, finite evaluations—not a guarantee of perfect answers or coverage
+of every phrasing. Ollama must be running locally and the model must already be
+installed. The runner always selects DEMO data. The commands below write reports
+to the repository root; these generated reports are intentionally git-ignored.
+
+From the repository root in PowerShell, with the desktop environment installed as
+above:
+
+```powershell
+$env:PYTHONIOENCODING = "utf-8"
+.\.venv-desktop\Scripts\python.exe scripts/evaluate_conversations.py --scenarios scripts/conversation_eval_50.json --output conversation-eval-primary-report.json --model qwen3:4b-instruct
+.\.venv-desktop\Scripts\python.exe scripts/evaluate_conversations.py --scenarios scripts/conversation_eval_variety.json --output conversation-eval-variety-report.json --model qwen3:4b-instruct
+```
 
 ## AI assistance and submission status
 
