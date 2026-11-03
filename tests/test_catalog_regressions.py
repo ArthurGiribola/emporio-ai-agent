@@ -348,12 +348,21 @@ class CatalogRegressionTests(unittest.TestCase):
         self.assertNotIn("Ukulele", result.text)
         self.assertEqual(sum(line[:1].isdigit() for line in result.text.splitlines()), 9)
 
-    def test_default_partial_list_is_never_rendered_as_complete(self):
+    def test_partial_list_is_never_rendered_as_complete(self):
         provider = Mock(external=False)
         provider.complete.side_effect = [ProviderReply("", (ToolCall("search_products", {"query": "violão", "max_price_brl": "150"}),), {}), ProviderReply("This is the complete catalog", (), {})]
         result = Agent(provider, self.tools).run("Quais violões até R$150?")
-        self.assertIn("5 de 9", result.text)
-        self.assertIn("parcial", result.text.casefold())
+        # Searches return the full sorted set (the UI paginates); the model's claim is not echoed.
+        self.assertIn("9 opções", result.text)
+        self.assertNotIn("This is the complete catalog", result.text)
+        # A result truncated by the output ceiling is still labelled partial.
+        from app.grounding import render_catalog
+        args = self.tools.prepare_arguments("search_products", {}, "Quais violões até R$150?")
+        data = self.tools.execute("search_products", args)["data"]
+        data.update(products=data["products"][:5], returned_count=5, truncated=True)
+        text = render_catalog(data, self.tools._catalog.repository.categories)
+        self.assertIn("5 de 9", text)
+        self.assertIn("parcial", text.casefold())
 
 
 @unittest.skipUnless(all((DATA / f"{name}.csv").is_file() for name in SCHEMAS), "Authorized original CSVs absent")

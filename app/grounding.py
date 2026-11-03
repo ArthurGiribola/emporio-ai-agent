@@ -13,18 +13,6 @@ def wants_all(question: str) -> bool:
                 or (re.search(r"\btudo\b", text) and not re.match(r"^tudo\s+bem\b", text)))
 
 
-def wants_catalog_browse(question: str, catalog) -> bool:
-    """Load full results when the customer asks to browse a broad product set."""
-    text = normalize(question)
-    listing = re.search(r"\b(?:quais|ver|veja|mostrar|mostr\w*|listar|liste|lista|exib\w*|browse|show|list)\b", text)
-    scope = (catalog.category_ids_from_text(question) or re.search(
-        r"\b(?:produtos|instrumentos|modelos|catalogo|available|disponiveis)\b", text))
-    preview = re.search(
-        r"\b(?:alguns|algumas|poucos|poucas|few|some|a few|primeir\w*\s+\d+|first\s+\d+)\b|"
-        r"\b\d+\s+(?:produtos|instrumentos|modelos)\b", text)
-    return bool(listing and scope and not preview and requested_budget(question) is None)
-
-
 def catalog_question(question: str) -> bool:
     return bool(wants_all(question) or re.search(r"\b(?:quais|existem|modelos|opcoes|disponiveis|disponivel|liste|listar|lista|catalogo|todos|todas|all|list|available|tem|vende|estoque|baratos|barato|precos|prices|instrument\w*|viol\w*|guit\w*|ukulel\w*|baix\w*)\b", normalize(question)))
 
@@ -65,67 +53,78 @@ def requested_budget(question: str) -> Decimal | None:
     return Decimal(amount) if 0 < amount < 10**12 else None
 
 
-def catalog_arguments(question: str, arguments: dict, catalog) -> dict:
-    """Explicit customer category/budget beat hallucinated model arguments.
+def catalog_vocabulary(catalog) -> frozenset:
+    """Words that identify some product: its name and specification values (from the data)."""
+    words = set()
+    for product in catalog.repository.products.values():
+        specs = " ".join(str(value) for value in product.specs.values())
+        words.update(re.findall(r"\w+", _normalize(f"{product.name} {specs}")))
+    return frozenset(words)
 
-    For exhaustive lists, discard invented query qualifiers while retaining
-    qualifiers literally present in the request. This is not a general NL parser.
+
+def catalog_arguments(question: str, arguments: dict, catalog) -> dict:
+    """Build validated, structured search filters for one customer turn.
+
+    Three separate things, never inferred from leftover words of the sentence:
+
+    * browsing scope: every search returns the full sorted result set
+      (the UI paginates), so "show me everything" needs no text query;
+    * structured filters: category, budget and availability come from the
+      customer's message (category labels and budgets are recognised from the
+      catalog's own data and an explicit amount); unavailable records are
+      included only when the customer explicitly asks for them;
+    * specific search terms: the model declares ``scope``. For ``browse`` the
+      query is ignored. For ``search`` its terms are kept, including names the
+      store does not carry, so the customer gets an honest empty result instead
+      of an unrelated list. A call without a valid scope is outside the tool
+      contract; then the customer's own words that identify some catalog record
+      (a product-name or specification word, derived from the data) are used.
+      In every case a term must have been written by the customer in this
+      message: stale or invented qualifiers never become hidden filters.
     """
-    # Never let model-inferred values silently add or retain filters. The customer
-    # question is the only source of query, category, budget, and availability scope.
+    model = arguments if isinstance(arguments, dict) else {}
     result = {}
     text = normalize(question)
-    include_unavailable = bool(re.search(r'\b(?:indisponiveis|inativos|unavailable|inactive)\b|sem estoque|out of stock', text))
-    result['available_only'] = not include_unavailable
+    explicit_unavailable = bool(re.search(
+        r'\b(?:indisponiveis|indisponivel|inativos|inativas|unavailable|inactive)\b|sem estoque|out of stock', text))
+    # Availability scope is the customer's explicit choice, never the model's guess.
+    result['available_only'] = not explicit_unavailable
     categories = catalog.category_ids_from_text(question)
     if len(categories) == 1:
         result["category_id"] = next(iter(categories))
     budget = requested_budget(question)
     if budget is not None:
         result["max_price_brl"] = str(budget)
-    result["all_results"] = wants_all(question) or wants_catalog_browse(question, catalog)
-    if result["all_results"] or re.search(r"\b(?:efetiv|final|desconto|effective|discount|promoc|pix|preco|custa|quanto|price|cost)\b", text):
-        result["sort_by"] = "effective_price"
-    # Build the search phrase from user-provided qualifiers only; never trust a
-    # model's guessed category, currency, pagination, or stale search query.
-    ignored = set((
-        "quais qual que produto produtos instrumento instrumentos modelo modelos opcoes existem liste listar lista catalogo todos todas completo completa"
-        " disponivel disponiveis tem tenho temos tao ta esta estao voces vcs vende vendem estoque barato baratinho baratinhos barata baratas caro carinhos caros mais menos ao"
-        " estao esta primeiro primeiros primeira primeiras ultimo ultimos do da de dos das um uma uns umas o a os as me mostra mostre ver apresente apresentar apresentem"
-        " por ate no maximo reais real r com ate todos tudo incluindo pf favor porfavor please all every available product products"
-        " quanto custa cost costs preco precos price prices valor values quanto custa aceita aceitam aceita bem comparar compare comparison differences difference diferenca"
-        " quero queria queremos gostariamos estou estamos to pensando considerando namorando escolhendo ainda levar pegar separa separar passa manda mostra mostrar pode podem posso podemos poderia poderiam confere gastar uns umao choose choosing looking help me can you please"
-        " stock stocks inventory in stock do you does it"
-        " demonstration synthetic only filtered intent tokens original text withheld"
-        " instrument instruments models options list show catalog full complete cheapest cheapest first lowest highest price sorted price prices preco precos valor final"
-        " tiver tenham tenha haja ai por ai da pra pra pro pras pros em conta"
-        " nao manjo muito tipo por aqui beleza tranquilo certo agora ola oi gostaria"
-        " in stock out of stock unavailable inactive indisponiveis indisponivel inativos inativo sem estoque and or to from the a an de do da dos das e ou no na nos nas em pra pro pras pros ai"
-        ""
-        " unidade unidades quantidade quantidades sobrando sobra algum alguma qualquer modelo modelos"
-        " registrado registrados registrada registradas aparece aparecem aparecer constam consta constar appear appears appearing"
-        " zero dez vinte trinta quarenta cinquenta sessenta setenta oitenta noventa cem cento duzentos duzentas"
-        " trezentos trezentas quatrocentos quatrocentas quinhentos quinhentas seiscentos seiscentas setecentos"
-        " setecentas oitocentos oitocentas novecentos novecentas mil"
-    ).split())
+    result["all_results"] = True
+    result["sort_by"] = "effective_price"
+    # Specific terms: the model's interpretation, grounded in the customer's words.
+    # Category names are already a structured filter; numbers are budgets/quantities.
+    spoken = set(re.findall(r"\w+", _normalize(question)))
+    scope = model.get("scope") if model.get("scope") in {"browse", "search"} else None
+    model_query = model.get("query") if isinstance(model.get("query"), str) and scope != "browse" else ""
+    vocabulary = catalog_vocabulary(catalog) if scope is None else None
     category_words = set()
-    for category_id in categories:
+    for category_id in catalog.category_ids_from_text(model_query) | categories:
         category_words.update(re.findall(r"\w+", _normalize(catalog.repository.categories[category_id].name)))
-    # Remove mode descriptions as phrases, not words globally: a model or
-    # product name that happens to contain "demo" must remain searchable.
-    query_text = _normalize(question)
-    query_text = re.sub(r"\bde\s+(?:demonstracao|demonstration)\b", " ", query_text)
-    # "Inclusive os que estão sem estoque" is an availability instruction,
-    # not a product-name qualifier. Keep other uses of these words intact.
-    query_text = re.sub(
-        r"\binclusive(?=\s+(?:(?:os|as|aqueles|aquelas)\s+)?(?:que\s+)?(?:estao|ficam|ficarem|tenham|indisponiveis|inativos|sem\s+estoque))",
-        " ", query_text)
-    terms = [term for term in re.findall(r"\w+", query_text)
-             if term not in ignored and term not in category_words
-             and not re.fullmatch(r"\d+(?:[.,]\d+)?", term)]
-    # Common English material terms map to the Portuguese catalog labels.
+    terms = []
+    # Out-of-contract call (no declared scope): the model's words are not trusted;
+    # use the customer's own words that identify some catalog record instead.
+    source = model_query if scope is not None else _normalize(question)
+    for raw in re.findall(r"[\w-]+", source):
+        parts = [part for part in re.findall(r"\w+", _normalize(raw))]
+        if not parts or any(part not in spoken for part in parts):
+            continue  # not written by the customer in this turn: never a hidden filter
+        if all(part in category_words for part in parts):
+            continue
+        if all(re.fullmatch(r"\d+(?:[.,]\d+)?", part) for part in parts):
+            continue
+        if vocabulary is not None and not all(part in vocabulary for part in parts):
+            continue  # contract fallback only: an undeclared term must identify a record
+        terms.extend(parts)
     terms = ['aco' if term in {'steel', 'steelstring'} else term for term in terms]
-    result["query"] = " ".join(terms)
+    result["query"] = " ".join(dict.fromkeys(terms))
+    if scope:
+        result["scope"] = scope
     return result
 
 
@@ -150,6 +149,15 @@ def render_catalog(data: dict, categories, *, english: bool = False, synthetic: 
     if data.get("catalog_state") == "empty_dataset":
         return f"O {catalog} está vazio no momento; não há produtos para consultar."
     if not total:
+        searched = filters.get("query") or ""
+        if searched:
+            article = "as" if label.endswith("as") else "os"
+            where = f"entre {article} {label}{availability}{qualifier}" if names or qualifier else f"entre os produtos{availability}"
+            answer = f"Não encontrei “{searched}” {where} do {catalog}."
+            if data.get("matches_without_query"):
+                answer += (f" Quer ver {article} {label}{availability}{qualifier} que temos?" if names
+                           else " Quer ver o catálogo completo?")
+            return answer
         return f"Não encontrei {label}{availability}{qualifier} no {catalog}."
     if data["truncated"]:
         heading = f"Encontrei {total} opções de {label}{qualifier} no {catalog}. Aqui estão {returned} de {total}, do mais barato ao mais caro (lista parcial):"
@@ -189,6 +197,12 @@ def _render_english_catalog(data: dict, categories, *, synthetic: bool = False) 
     if data.get("catalog_state") == "empty_dataset":
         return f"The {catalog} is empty at the moment; there are no products to browse."
     if not total:
+        searched = filters.get("query") or ""
+        if searched:
+            answer = f"I couldn't find “{searched}” among the {availability}{label}{qualifier} in our {catalog}."
+            if data.get("matches_without_query"):
+                answer += f" Would you like to see the {availability}{label}{qualifier} we have?"
+            return answer
         return f"I couldn't find any {availability}{label}{qualifier} in our {catalog}."
     if data["truncated"]:
         heading = f"I found {total} matching {label}{qualifier} in our {catalog}. Here are {len(products)} of {total}, lowest price first (partial list):"

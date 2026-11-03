@@ -214,13 +214,20 @@ class Agent:
     def _finish(self, question, history, called, results, answer, native, *, guarded=True):
         self._emit({'event': 'final_response', 'text': answer, 'guarded': guarded})
         catalog = None
+        # A successful search is shown as the browsable list unless this turn is
+        # about specific records (a product/quote/order lookup) or a return policy.
+        detail_turn = any(name in {'get_product', 'get_price_quote', 'lookup_order'} and result.get('status') == 'ok'
+                          for name, result in results)
         for name, result in results:
-            if name == 'search_products' and catalog_question(question) and not online_return_question(question):
-                self._catalog_product_ids = tuple(p['product_id'] for p in result['data']['products']) if result.get('status') == 'ok' else ()
-                if result.get('status') == 'ok':
-                    price_question = bool(re.search(r'\b(?:preco|prec\w*|valor|quanto custa|custa|price|cost|how much)\b', normalize(question)))
-                    if not (price_question and not wants_all(question) and len(result['data']['products']) == 1 and not result['data'].get('truncated')):
-                        catalog = build_catalog_view(self._tools._catalog, result['data'], synthetic=self._tools.is_synthetic)
+            if (name == 'search_products' and result.get('status') == 'ok' and not detail_turn
+                    and not online_return_question(question)):
+                price_question = bool(re.search(r'\b(?:preco|prec\w*|valor|quanto custa|custa|price|cost|how much)\b', normalize(question)))
+                if not (price_question and not wants_all(question) and len(result['data']['products']) == 1 and not result['data'].get('truncated')):
+                    catalog = build_catalog_view(self._tools._catalog, result['data'], synthetic=self._tools.is_synthetic)
+                    # List positions always refer to the last NON-EMPTY list the
+                    # customer actually saw; an empty search leaves it unchanged.
+                    if catalog.entries:
+                        self._catalog_product_ids = tuple(entry.product_id for entry in catalog.entries)
         history.append({'role': 'assistant', 'native': native})
         previous_count = sum(len(exchange) for exchange in self._turns)
         self._turns.append(memory_exchange(history[previous_count:]))
@@ -750,7 +757,7 @@ class Agent:
                         and current_results[0][1].get('status') == 'ok'
                         and len(current_results[0][1]['data']['products']) > 10
                         and self._tools.required_evidence(question) in (None, 'search_products')
-                        and catalog_question(question) and not online_return_question(question)):
+                        and not online_return_question(question)):
                     answer = self._tools.grounded_answer(question, current_results, '')
                     native = ({'role': 'model', 'parts': [{'text': answer}]} if self._provider.external else
                               {'role': 'assistant', 'content': answer})

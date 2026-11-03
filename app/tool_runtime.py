@@ -26,10 +26,11 @@ def _schema(name, description, properties, required=()):
 
 TOOLS = [
     _schema("search_products", "Search snapshot catalog; inclusive list-price budget; available products by default.",
-            {"query": {"type": "string"}, "category_id": {"type": "integer"},
+            {"scope": {"type": "string", "enum": ["browse", "search"], "description": "Always set. browse: the customer wants to see the catalog or a whole category (query is ignored). search: the customer named a specific product, brand, model or material, even one the store may not carry."},
+             "query": {"type": "string", "description": "For scope=search only: the product name, brand, model or material, in the customer's own words. Never words like catalog, list, all, products or courtesy words."}, "category_id": {"type": "integer"},
              "max_price_brl": {"type": "string", "description": "Decimal BRL amount, for example 1000.00"},
              "sort_by": {"type": "string", "enum": ["list_price", "effective_price"]},
-             "all_results": {"type": "boolean", "description": "Return every matching product when the customer requests all; otherwise a partial preview is returned."},
+             "all_results": {"type": "boolean", "description": "Ignored: every matching product is returned and the interface paginates."},
              "available_only": {"type": "boolean", "description": "Default true. Use false only when explicitly asked to include unavailable/inactive products."}}),
     _schema("get_product", "Get a product and recorded availability, with quality warnings.",
             {"product_id": {"type": "integer"}}, ("product_id",)),
@@ -239,7 +240,12 @@ class ToolRuntime:
                     return ("A política de demonstração não especifica essa condição, então não consigo confirmá-la. "
                             "O atendimento precisa esclarecê-la.\n\n"
                             f"Fontes: seções {references}.")
-        if catalog_question(question):
+        # A list is rendered whenever the model searched the catalog in this turn,
+        # unless specific product/order records were also consulted.
+        searched = any(name == "search_products" for name, _ in results)
+        specific = any(name in {"get_product", "get_price_quote", "lookup_order"} and result.get("status") == "ok"
+                       for name, result in results)
+        if searched and not specific:
             if any(name == "search_products" and result.get("status") == "error" for name, result in results):
                 return ("The catalog lookup failed; availability could not be verified." if english_question(question) else
                         "A consulta ao catálogo falhou; não foi possível verificar a disponibilidade.")
@@ -380,6 +386,12 @@ class ToolRuntime:
                 quotes = {p.product_id: self._catalog.get_price_quote(p.product_id).final_price_brl for p in products} if effective else {}
                 if effective:
                     products = tuple(sorted(products, key=lambda p: (quotes[p.product_id], p.product_id)))
+                # An empty specific search keeps a deterministic flag of whether the
+                # same structured filters (without the text term) have products.
+                matches_without_query = (bool(self._catalog.search_products("",
+                    category_id=arguments.get("category_id"), max_price_brl=Decimal(budget) if budget is not None else None,
+                    available_only=arguments.get('available_only', True)))
+                    if not products and arguments.get("query") else None)
                 all_results = arguments.get("all_results", False)
                 selected = products if all_results else products[:5]
                 # Compact search rows keep the full supplied catalog within the output budget.
@@ -390,6 +402,7 @@ class ToolRuntime:
                         "truncated": len(selected) < len(products), "sort_order": "effective_price_ascending" if effective else "list_price_ascending",
                         "catalog_state": "empty_dataset" if not self._catalog.repository.products else "matches" if products else "no_matches",
                         "all_results_requested": all_results, "source": "CSV snapshot; freshness unknown",
+                        **({"matches_without_query": matches_without_query} if matches_without_query is not None else {}),
                         "filters": {"category_ids": sorted({arguments["category_id"]} if "category_id" in arguments
                                                            else self._catalog.category_ids_from_text(arguments.get("query", ""))),
                                     "query": arguments.get("query", ""), "max_price_brl": budget,

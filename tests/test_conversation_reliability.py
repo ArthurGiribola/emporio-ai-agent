@@ -166,10 +166,16 @@ class ReliabilityTests(unittest.TestCase):
                 data = self.tools.execute('search_products', args)['data']
                 self.assertEqual([row['product_id'] for row in data['products']], [1, 2, 3])
 
-        # Contextual mode stripping must not remove a meaningful model name.
-        args = self.tools.prepare_arguments('search_products', {},
+        # A meaningful model name the customer asked for (declared search) is preserved,
+        # even when the store does not carry it, and the empty result is stated honestly.
+        args = self.tools.prepare_arguments('search_products', {'scope': 'search', 'query': 'Demo Drive'},
             'Liste todos os instrumentos do catálogo de demonstração com o modelo Demo Drive.')
         self.assertEqual(args['query'], 'demo drive')
+        data = self.tools.execute('search_products', args)['data']
+        self.assertEqual(data['total_matches'], 0)
+        text = self.tools.grounded_answer('Liste o modelo Demo Drive.', [('search_products', {'status': 'ok', 'data': data})], '')
+        self.assertIn('demo drive', text)
+        self.assertNotIn('Encontrei', text)
 
     def test_exact_product_name_overrides_invalid_model_identifier(self):
         question = 'Quanto fica o Violão Sintético Nylon no PIX?'
@@ -255,12 +261,15 @@ class ReliabilityTests(unittest.TestCase):
         self.assertGreater(polite_result['data']['total_matches'], 0)
         self.assertTrue(all(product['available'] for product in polite_result['data']['products']))
 
-    def test_broad_browse_requests_load_full_results_but_limited_requests_stay_partial(self):
-        from app.grounding import wants_catalog_browse
-        self.assertTrue(wants_catalog_browse('Quais produtos estão disponíveis?', self.tools._catalog))
-        self.assertTrue(wants_catalog_browse('Quero ver os violões disponíveis.', self.tools._catalog))
-        self.assertFalse(wants_catalog_browse('Mostre os primeiros 3 produtos.', self.tools._catalog))
-        self.assertFalse(wants_catalog_browse('Qual é o preço do produto 1?', self.tools._catalog))
+    def test_every_search_returns_the_complete_sorted_result_set(self):
+        # The interface paginates; a browse request never silently becomes a 5-item preview.
+        for question in ('Quais produtos estão disponíveis?', 'Quero ver os violões disponíveis.'):
+            with self.subTest(question=question):
+                args = self.tools.prepare_arguments('search_products', {'scope': 'browse'}, question)
+                data = self.tools.execute('search_products', args)['data']
+                self.assertTrue(args['all_results'])
+                self.assertFalse(data['truncated'])
+                self.assertEqual(data['returned_count'], data['total_matches'])
 
     def test_conversational_rephrasings_need_no_business_tool(self):
         for question in ('Oiê!', 'E aí, tudo certo?', 'Cheguei agora. Como vocês podem me dar uma força?',

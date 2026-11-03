@@ -99,15 +99,21 @@ class ChatSession:
         if result.status != "answered":
             return ChatAnswer(result.text, error=True)
         if result.catalog is not None:
-            count = len(result.catalog.entries)
-            if count == 0:
+            shown = len(result.catalog.entries)
+            if shown == 0:
                 return ChatAnswer(result.text, tuple(self._references), catalog=result.catalog)
+            # Total found and the number shown are different facts; never conflate them.
+            total = result.catalog.total_matches
             if english_question(question):
                 source = 'demonstration catalog' if result.catalog.synthetic else 'catalog'
-                text = f'I found {count} products in our {source}. Browse the pages or select an item for details.'
+                found = (f'I found {total} products in our {source}' if shown == total else
+                         f'I found {total} products in our {source}; showing {shown} of {total}')
+                text = found + '. Browse the pages or select an item for details.'
             else:
                 source = 'catálogo de demonstração' if result.catalog.synthetic else 'catálogo'
-                text = f'Encontrei {count} produtos no {source}. Você pode navegar pelas páginas ou selecionar um item para ver os detalhes.'
+                found = (f'Encontrei {total} produtos no {source}' if shown == total else
+                         f'Encontrei {total} produtos no {source}; mostrando {shown} de {total}')
+                text = found + '. Você pode navegar pelas páginas ou selecionar um item para ver os detalhes.'
             return ChatAnswer(text, tuple(self._references), catalog=result.catalog)
         return ChatAnswer(result.text, tuple(self._references))
 
